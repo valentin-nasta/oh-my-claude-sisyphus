@@ -3,7 +3,6 @@
 ![oh-my-claude-sisyphus](https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claude-sisyphus-website/main/social-preview.png)
 
 [![npm version](https://badge.fury.io/js/oh-my-claude-sisyphus.svg)](https://www.npmjs.com/package/oh-my-claude-sisyphus)
-[![Beta](https://img.shields.io/badge/beta-1.8.0--beta.2-orange)](https://www.npmjs.com/package/oh-my-claude-sisyphus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Agents](https://img.shields.io/badge/Agents-11-ff0040)](https://github.com/Yeachan-Heo/oh-my-claude-sisyphus)
 [![Days Since Ban](https://img.shields.io/badge/Days%20Since%20Ban-0-00ffff)](https://github.com/Yeachan-Heo/oh-my-claude-sisyphus)
@@ -233,9 +232,9 @@ Skills are automatically activated via slash commands or magic keywords.
 
 ---
 
-## Intelligent Skill Activation (Beta)
+## Intelligent Skill Activation
 
-> **New in v1.8.0-beta**: Skills are no longer mutually exclusive. Claude automatically combines skills based on task requirements.
+> **New in v1.8.0**: Skills are no longer mutually exclusive. Claude automatically combines skills based on task requirements.
 
 ### Skill Layers
 
@@ -278,12 +277,6 @@ Claude uses judgment to detect task type and activate appropriate skill combinat
 
 "Fix this bug, don't stop until it's done"
 → sisyphus + ralph-loop
-```
-
-### Install Beta
-
-```bash
-npm install -g oh-my-claude-sisyphus@beta
 ```
 
 ---
