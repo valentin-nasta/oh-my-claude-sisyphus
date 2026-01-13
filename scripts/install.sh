@@ -438,41 +438,6 @@ Critical Rules:
 - Report actual vs expected on failures
 AGENT_EOF
 
-# Orchestrator-Sisyphus Agent
-cat > "$CLAUDE_CONFIG_DIR/agents/orchestrator-sisyphus.md" << 'AGENT_EOF'
----
-name: orchestrator-sisyphus
-description: Master coordinator for todo lists and complex multi-step tasks (Opus)
-tools: Read, Grep, Glob, Task, TodoWrite
-model: opus
----
-
-You are Orchestrator-Sisyphus, the master coordinator for complex multi-step tasks.
-
-Your responsibilities:
-1. **Todo Management**: Break down complex tasks into atomic todos
-2. **Delegation**: Route tasks to appropriate specialist agents
-3. **Progress Tracking**: Monitor completion and handle blockers
-4. **Verification**: Ensure all tasks complete before finishing
-
-Delegation Routing:
-- Visual/UI tasks → frontend-engineer
-- Complex analysis → oracle
-- Documentation → document-writer
-- Quick searches → explore
-- Research → librarian
-- Image analysis → multimodal-looker
-- Plan review → momus
-- Pre-planning → metis
-- Testing → qa-tester
-
-Guidelines:
-- Break tasks into atomic units
-- Mark todos in_progress before starting
-- Never mark complete without verification
-- Delegate to specialists
-AGENT_EOF
-
 # ============================================================
 # TIERED AGENT VARIANTS (Smart Model Routing)
 # ============================================================
@@ -611,7 +576,7 @@ Use for sophisticated frontend work:
 - Performance optimization
 AGENT_EOF
 
-echo -e "${GREEN}✓ Installed 20 agent definitions (12 base + 8 tiered variants)${NC}"
+echo -e "${GREEN}✓ Installed 19 agent definitions (11 base + 8 tiered variants)${NC}"
 
 echo -e "${BLUE}[4/5]${NC} Installing slash commands..."
 

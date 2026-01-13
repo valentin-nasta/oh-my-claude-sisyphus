@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated ralph-loop and orchestrator with qa-tester integration
 - Updated sisyphus command with Agent Combinations section
 
+### Refactored
+- **Merged sisyphus+orchestrator+ultrawork into default mode** - 80% behavior overlap consolidated
+  - Default mode is now an intelligent orchestrator
+  - `/orchestrator` command deprecated (use default mode or `/ultrawork`)
+  - Skill composition replaces agent swapping
+- **Removed deprecated orchestrator command** - Deleted `commands/orchestrator.md` and `orchestratorSkill` (1352 lines)
+- **Updated attribution** - Changed from "Port of" to "Inspired by" oh-my-opencode (70% divergence)
+
+### Fixed
+- **Migrated to ESLint v9 flat config** - Created `eslint.config.js` for modern ESLint
+- **Resolved all 50 lint warnings** - Removed unused imports, fixed prefer-const, updated re-exports
+- Synced installer COMMAND_DEFINITIONS with updated skills
+- Handle malformed settings.json gracefully in install.sh
+
 ---
 
 ## [2.0.0-beta.1] - 2026-01-13

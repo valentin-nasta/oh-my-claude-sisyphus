@@ -129,8 +129,7 @@ The installer adds to your Claude Code config (`~/.claude/`):
 │   ├── metis.md               # Pre-planning consultant (Opus)
 │   ├── sisyphus-junior.md     # Focused executor (Sonnet)
 │   ├── prometheus.md          # Strategic planner (Opus)
-│   ├── qa-tester.md           # CLI/service testing (Sonnet)
-│   └── orchestrator-sisyphus.md # Master orchestrator (Opus)
+│   └── qa-tester.md           # CLI/service testing (Sonnet)
 ├── commands/
 │   ├── sisyphus.md         # /sisyphus command
 │   ├── sisyphus-default.md # /sisyphus-default command
@@ -436,7 +435,7 @@ curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claude-sisyphus/m
 Or manually:
 
 ```bash
-rm ~/.claude/agents/{oracle,librarian,explore,frontend-engineer,document-writer,multimodal-looker,momus,metis,sisyphus-junior,prometheus,qa-tester,orchestrator-sisyphus}.md
+rm ~/.claude/agents/{oracle,librarian,explore,frontend-engineer,document-writer,multimodal-looker,momus,metis,sisyphus-junior,prometheus,qa-tester}.md
 rm ~/.claude/commands/{sisyphus,sisyphus-default,ultrawork,deepsearch,analyze,plan,review,prometheus,orchestrator,ralph-loop,cancel-ralph}.md
 ```
 
