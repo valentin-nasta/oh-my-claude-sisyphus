@@ -58,30 +58,30 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 Choose **ONE** installation method below. Do not mix methods.
 
-### Option A: Curl One-Liner (Recommended for macOS/Linux)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claude-sisyphus/main/scripts/install.sh | bash
-```
-
-This installs everything to `~/.claude/` with bash hooks. **Complete and ready to use.**
-
-### Option B: Via npm (Windows & Cross-Platform)
-
-```bash
-npm install -g oh-my-claude-sisyphus
-```
-
-> **Windows Users**: This is the only supported installation method. Requires Node.js 20+.
-
-### Option C: Claude Code Plugin
+### Option A: Claude Code Plugin (Recommended)
 
 ```bash
 # In Claude Code, run:
 /plugin install oh-my-claude-sisyphus
 ```
 
-Uses Node.js hooks from the plugin directory. Integrates with Claude Code's plugin system.
+Uses Node.js hooks from the plugin directory. Integrates directly with Claude Code's plugin system.
+
+### Option B: Curl One-Liner (Deprecated)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claude-sisyphus/main/scripts/install.sh | bash
+```
+
+> **Deprecated**: This method installs bash hooks to `~/.claude/` which can conflict with plugin installations. Use the plugin method above instead.
+
+### Option C: Via npm (Windows & Cross-Platform)
+
+```bash
+npm install -g oh-my-claude-sisyphus
+```
+
+> **Windows Users**: This is the recommended installation method. Requires Node.js 20+.
 
 > **Important:** Plugin install and curl install are **mutually exclusive**. Using both will cause hook conflicts. Choose one method only.
 
