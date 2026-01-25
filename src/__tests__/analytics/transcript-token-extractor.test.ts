@@ -77,7 +77,8 @@ describe('extractTokenUsage', () => {
     const result = extractTokenUsage(entry, 'test-session-123', 'test.jsonl');
 
     expect(result).not.toBeNull();
-    expect(result?.usage.agentName).toBe('smooth-swinging-avalanche');
+    // Assistant entries are main session responses, not agent responses
+    expect(result?.usage.agentName).toBeUndefined();
   });
 
   it('should normalize model names correctly', () => {
@@ -133,7 +134,8 @@ describe('extractTokenUsage', () => {
     const result = extractTokenUsage(entry, 'test-session-123', 'test.jsonl');
 
     expect(result).not.toBeNull();
-    expect(result?.usage.agentName).toBe('oh-my-claudecode:executor');
+    // The usage is for generating the Task call, not the spawned agent
+    expect(result?.usage.agentName).toBeUndefined();
   });
 
   it('should use ACTUAL output_tokens from transcript', () => {
