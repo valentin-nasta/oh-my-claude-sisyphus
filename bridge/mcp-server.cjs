@@ -17831,6 +17831,48 @@ var LSP_SERVERS = {
     args: ["--stdio"],
     extensions: [".yaml", ".yml"],
     installHint: "npm install -g yaml-language-server"
+  },
+  php: {
+    name: "PHP Language Server (Intelephense)",
+    command: "intelephense",
+    args: ["--stdio"],
+    extensions: [".php", ".phtml"],
+    installHint: "npm install -g intelephense"
+  },
+  ruby: {
+    name: "Ruby Language Server (Solargraph)",
+    command: "solargraph",
+    args: ["stdio"],
+    extensions: [".rb", ".rake", ".gemspec", ".erb"],
+    installHint: "gem install solargraph"
+  },
+  lua: {
+    name: "Lua Language Server",
+    command: "lua-language-server",
+    args: [],
+    extensions: [".lua"],
+    installHint: "Install from https://github.com/LuaLS/lua-language-server"
+  },
+  kotlin: {
+    name: "Kotlin Language Server",
+    command: "kotlin-language-server",
+    args: [],
+    extensions: [".kt", ".kts"],
+    installHint: "Install from https://github.com/fwcd/kotlin-language-server"
+  },
+  elixir: {
+    name: "ElixirLS",
+    command: "elixir-ls",
+    args: [],
+    extensions: [".ex", ".exs", ".heex", ".eex"],
+    installHint: "Install from https://github.com/elixir-lsp/elixir-ls"
+  },
+  csharp: {
+    name: "OmniSharp",
+    command: "omnisharp",
+    args: ["-lsp"],
+    extensions: [".cs"],
+    installHint: "dotnet tool install -g omnisharp"
   }
 };
 function commandExists(command) {
@@ -18121,7 +18163,21 @@ ${content}`;
       "css": "css",
       "scss": "scss",
       "yaml": "yaml",
-      "yml": "yaml"
+      "yml": "yaml",
+      "php": "php",
+      "phtml": "php",
+      "rb": "ruby",
+      "rake": "ruby",
+      "gemspec": "ruby",
+      "erb": "ruby",
+      "lua": "lua",
+      "kt": "kotlin",
+      "kts": "kotlin",
+      "ex": "elixir",
+      "exs": "elixir",
+      "heex": "elixir",
+      "eex": "elixir",
+      "cs": "csharp"
     };
     return langMap[ext] || ext;
   }
