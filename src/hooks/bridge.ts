@@ -537,6 +537,15 @@ export async function processHook(
   hookType: HookType,
   input: HookInput
 ): Promise<HookOutput> {
+  // Environment kill-switches for plugin coexistence
+  if (process.env.DISABLE_OMC === '1' || process.env.DISABLE_OMC === 'true') {
+    return { continue: true };
+  }
+  const skipHooks = process.env.OMC_SKIP_HOOKS?.split(',').map(s => s.trim()) ?? [];
+  if (skipHooks.includes(hookType)) {
+    return { continue: true };
+  }
+
   try {
     switch (hookType) {
       case 'keyword-detector':
