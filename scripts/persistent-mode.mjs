@@ -217,8 +217,8 @@ async function main() {
         writeJsonFile(ralph.path, ralph.state);
 
         console.log(JSON.stringify({
-          continue: true,
-          message: `[RALPH LOOP - ITERATION ${iteration + 1}/${maxIter}] Work is NOT done. Continue. When complete, output: <promise>${ralph.state.completion_promise || 'DONE'}</promise>\n${ralph.state.prompt ? `Task: ${ralph.state.prompt}` : ''}`
+          decision: 'block',
+          reason: `[RALPH LOOP - ITERATION ${iteration + 1}/${maxIter}] Work is NOT done. Continue. When complete, output: <promise>${ralph.state.completion_promise || 'DONE'}</promise>\n${ralph.state.prompt ? `Task: ${ralph.state.prompt}` : ''}`
         }));
         return;
       }
@@ -234,8 +234,8 @@ async function main() {
           writeJsonFile(autopilot.path, autopilot.state);
 
           console.log(JSON.stringify({
-            continue: true,
-            message: `[AUTOPILOT - Phase: ${phase}] Autopilot not complete. Continue working.`
+            decision: 'block',
+            reason: `[AUTOPILOT - Phase: ${phase}] Autopilot not complete. Continue working.`
           }));
           return;
         }
@@ -253,8 +253,8 @@ async function main() {
           writeJsonFile(ultrapilot.path, ultrapilot.state);
 
           console.log(JSON.stringify({
-            continue: true,
-            message: `[ULTRAPILOT] ${incomplete} workers still running. Continue.`
+            decision: 'block',
+            reason: `[ULTRAPILOT] ${incomplete} workers still running. Continue.`
           }));
           return;
         }
@@ -271,8 +271,8 @@ async function main() {
           writeJsonFile(join(stateDir, 'swarm-summary.json'), swarmSummary);
 
           console.log(JSON.stringify({
-            continue: true,
-            message: `[SWARM ACTIVE] ${pending} tasks remain. Continue working.`
+            decision: 'block',
+            reason: `[SWARM ACTIVE] ${pending} tasks remain. Continue working.`
           }));
           return;
         }
@@ -290,8 +290,8 @@ async function main() {
           writeJsonFile(pipeline.path, pipeline.state);
 
           console.log(JSON.stringify({
-            continue: true,
-            message: `[PIPELINE - Stage ${currentStage + 1}/${totalStages}] Pipeline not complete. Continue.`
+            decision: 'block',
+            reason: `[PIPELINE - Stage ${currentStage + 1}/${totalStages}] Pipeline not complete. Continue.`
           }));
           return;
         }
@@ -307,8 +307,8 @@ async function main() {
         writeJsonFile(ultraqa.path, ultraqa.state);
 
         console.log(JSON.stringify({
-          continue: true,
-          message: `[ULTRAQA - Cycle ${cycle + 1}/${maxCycles}] Tests not all passing. Continue fixing.`
+          decision: 'block',
+          reason: `[ULTRAQA - Cycle ${cycle + 1}/${maxCycles}] Tests not all passing. Continue fixing.`
         }));
         return;
       }
@@ -321,10 +321,8 @@ async function main() {
       const maxReinforcements = ultrawork.state.max_reinforcements || 50;
 
       if (newCount > maxReinforcements) {
-        console.log(JSON.stringify({
-          continue: true,
-          reason: `[ULTRAWORK ESCAPE] Max reinforcements (${maxReinforcements}) reached. Allowing stop.`
-        }));
+        // Max reinforcements reached - allow stop
+        console.log(JSON.stringify({ continue: true }));
         return;
       }
 
@@ -343,8 +341,8 @@ async function main() {
       }
 
       console.log(JSON.stringify({
-        continue: true,
-        message: reason
+        decision: 'block',
+        reason: reason
       }));
       return;
     }
@@ -355,10 +353,8 @@ async function main() {
       const maxReinforcements = ecomode.state.max_reinforcements || 50;
 
       if (newCount > maxReinforcements) {
-        console.log(JSON.stringify({
-          continue: true,
-          reason: `[ECOMODE ESCAPE] Max reinforcements (${maxReinforcements}) reached. Allowing stop.`
-        }));
+        // Max reinforcements reached - allow stop
+        console.log(JSON.stringify({ continue: true }));
         return;
       }
 
@@ -372,8 +368,8 @@ async function main() {
       }
 
       console.log(JSON.stringify({
-        continue: true,
-        message: reason
+        decision: 'block',
+        reason: reason
       }));
       return;
     }
