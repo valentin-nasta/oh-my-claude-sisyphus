@@ -12,8 +12,16 @@ import { detectGeminiCli } from './cli-detection.js';
 import { resolveSystemPrompt, buildPromptWithSystemContext } from './prompt-injection.js';
 
 // Default model can be overridden via environment variable
-const GEMINI_DEFAULT_MODEL = process.env.OMC_GEMINI_DEFAULT_MODEL || 'gemini-3-pro';
+const GEMINI_DEFAULT_MODEL = process.env.OMC_GEMINI_DEFAULT_MODEL || 'gemini-3-pro-preview';
 const GEMINI_TIMEOUT = parseInt(process.env.OMC_GEMINI_TIMEOUT || '120000', 10);
+
+// Model fallback chain: try each in order if previous fails
+const GEMINI_MODEL_FALLBACKS = [
+  'gemini-3-pro-preview',
+  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash'
+];
 
 /**
  * Execute Gemini CLI command and return the response
@@ -64,7 +72,7 @@ const askGeminiTool = tool(
   "Send a prompt to Google Gemini CLI for large-context analysis, second-opinion review, or alternative perspective. Gemini excels at analyzing large files with its 1M token context window. Requires Gemini CLI to be installed (npm install -g @google/gemini-cli).",
   {
     prompt: { type: "string", description: "The prompt to send to Gemini" },
-    model: { type: "string", description: `Gemini model to use (default: ${GEMINI_DEFAULT_MODEL}). Set OMC_GEMINI_DEFAULT_MODEL env var to change default. Options include: gemini-2.5-pro, gemini-2.5-flash` },
+    model: { type: "string", description: `Gemini model to use (default: ${GEMINI_DEFAULT_MODEL}). Automatic fallback chain: gemini-3-pro-preview → gemini-3-flash-preview → gemini-2.5-pro → gemini-2.5-flash` },
     files: { type: "array", items: { type: "string" }, description: "File paths for Gemini to analyze (leverages 1M token context window)" },
     system_prompt: { type: "string", description: "System prompt to inject - sets the personality/guidelines for Gemini. Takes precedence over agent_role." },
     agent_role: { type: "string", description: "Agent role shortcut (e.g. 'designer', 'architect', 'critic'). Loads the agent's system prompt automatically. Ignored if system_prompt is provided." },
@@ -107,22 +115,36 @@ const askGeminiTool = tool(
     // Combine: system prompt > file context > user prompt
     const fullPrompt = buildPromptWithSystemContext(prompt, fileContext, resolvedSystemPrompt);
 
-    try {
-      const response = await executeGemini(fullPrompt, model);
-      return {
-        content: [{
-          type: 'text' as const,
-          text: response
-        }]
-      };
-    } catch (err) {
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Gemini CLI error: ${(err as Error).message}`
-        }]
-      };
+    // Build fallback chain: start from the requested model
+    const requestedModel = model;
+    const fallbackIndex = GEMINI_MODEL_FALLBACKS.indexOf(requestedModel);
+    const modelsToTry = fallbackIndex >= 0
+      ? GEMINI_MODEL_FALLBACKS.slice(fallbackIndex)
+      : [requestedModel, ...GEMINI_MODEL_FALLBACKS];
+
+    const errors: string[] = [];
+    for (const tryModel of modelsToTry) {
+      try {
+        const response = await executeGemini(fullPrompt, tryModel);
+        const usedFallback = tryModel !== requestedModel;
+        const prefix = usedFallback ? `[Fallback: used ${tryModel} instead of ${requestedModel}]\n\n` : '';
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `${prefix}${response}`
+          }]
+        };
+      } catch (err) {
+        errors.push(`${tryModel}: ${(err as Error).message}`);
+      }
     }
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Gemini CLI error: all models failed.\n${errors.join('\n')}`
+      }]
+    };
   }
 );
 
