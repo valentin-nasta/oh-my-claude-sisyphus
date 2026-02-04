@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
  * Build script for Gemini MCP server bundle
+ *
+ * Builds the standalone MCP server that uses @modelcontextprotocol/sdk
+ * for proper stdio transport support when run as an external process.
  */
 
 import * as esbuild from 'esbuild';
@@ -11,7 +14,7 @@ const outfile = 'bridge/gemini-server.cjs';
 await mkdir('bridge', { recursive: true });
 
 await esbuild.build({
-  entryPoints: ['src/mcp/gemini-server.ts'],
+  entryPoints: ['src/mcp/gemini-standalone-server.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',

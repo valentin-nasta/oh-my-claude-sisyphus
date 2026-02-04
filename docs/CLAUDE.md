@@ -336,6 +336,9 @@ OMC provides optional integration with external AI CLIs via MCP servers for cros
 | `designer` | `ask_gemini` | Design system consistency analysis across many component files |
 | `designer-high` | `ask_gemini` | Large-scale UI architecture reviews leveraging 1M token context |
 
+**Codex Model: gpt-5.2**
+**Gemini Model: gemini-3-pro-preview | gemini-3-flash-preview**
+
 **Integration Protocol:**
 1. Form your OWN analysis/plan FIRST - never start with external consultation
 2. OPTIONALLY consult external model for validation (not required for every task)
