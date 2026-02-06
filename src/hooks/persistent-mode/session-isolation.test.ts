@@ -46,7 +46,7 @@ describe("Persistent Mode Session Isolation (Issue #311)", () => {
     it("should NOT block after ultrawork is deactivated", async () => {
       const sessionId = "session-done";
       activateUltrawork("Task complete", sessionId, tempDir);
-      deactivateUltrawork(tempDir);
+      deactivateUltrawork(tempDir, sessionId);
 
       const result = await checkPersistentModes(sessionId, tempDir);
       expect(result.shouldBlock).toBe(false);
@@ -57,6 +57,53 @@ describe("Persistent Mode Session Isolation (Issue #311)", () => {
 
       const result = await checkPersistentModes(undefined, tempDir);
       expect(result.shouldBlock).toBe(false);
+    });
+
+    it("should support session-scoped state files", async () => {
+      const sessionId = "session-scoped-test";
+      // Create state in session-scoped directory
+      const sessionDir = join(tempDir, ".omc", "state", "sessions", sessionId);
+      mkdirSync(sessionDir, { recursive: true });
+      writeFileSync(
+        join(sessionDir, "ultrawork-state.json"),
+        JSON.stringify({
+          active: true,
+          started_at: new Date().toISOString(),
+          original_prompt: "Session-scoped task",
+          session_id: sessionId,
+          reinforcement_count: 0,
+          last_checked_at: new Date().toISOString(),
+        }, null, 2)
+      );
+
+      const result = await checkPersistentModes(sessionId, tempDir);
+      expect(result.shouldBlock).toBe(true);
+      expect(result.mode).toBe("ultrawork");
+    });
+
+    it("Session A cannot see Session B state in session-scoped dirs", async () => {
+      const sessionA = "session-A";
+      const sessionB = "session-B";
+
+      // Create state for session B in session-scoped directory
+      const sessionDirB = join(tempDir, ".omc", "state", "sessions", sessionB);
+      mkdirSync(sessionDirB, { recursive: true });
+      writeFileSync(
+        join(sessionDirB, "ultrawork-state.json"),
+        JSON.stringify({
+          active: true,
+          started_at: new Date().toISOString(),
+          original_prompt: "Session B task",
+          session_id: sessionB,
+          reinforcement_count: 0,
+          last_checked_at: new Date().toISOString(),
+        }, null, 2)
+      );
+
+      // Session A should NOT be blocked by Session B's state
+      const result = await checkPersistentModes(sessionA, tempDir);
+      expect(result.shouldBlock).toBe(false);
+      expect(result.mode).toBe("none");
     });
   });
 

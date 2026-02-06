@@ -8,8 +8,9 @@
  *
  * All modes store state in `.omc/state/` subdirectory for consistency.
  */
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, rmdirSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
+import { listSessionIds, resolveSessionStatePath, getSessionStateDir } from '../../lib/worktree-paths.js';
 /**
  * Stale marker threshold (1 hour)
  * Markers older than this are auto-removed to prevent crashed sessions from blocking indefinitely.
@@ -95,8 +96,11 @@ export function ensureStateDir(cwd) {
 /**
  * Get the full path to a mode's state file
  */
-export function getStateFilePath(cwd, mode) {
+export function getStateFilePath(cwd, mode, sessionId) {
     const config = MODE_CONFIGS[mode];
+    if (sessionId && !config.isSqlite) {
+        return resolveSessionStatePath(mode, sessionId, cwd);
+    }
     return join(getStateDir(cwd), config.stateFile);
 }
 /**
@@ -120,9 +124,11 @@ export function getGlobalStateFilePath(mode) {
 /**
  * Check if a JSON-based mode is active by reading its state file
  */
-function isJsonModeActive(cwd, mode) {
+function isJsonModeActive(cwd, mode, sessionId) {
     const config = MODE_CONFIGS[mode];
-    const stateFile = getStateFilePath(cwd, mode);
+    const stateFile = sessionId && !config.isSqlite
+        ? resolveSessionStatePath(mode, sessionId, cwd)
+        : getStateFilePath(cwd, mode);
     if (!existsSync(stateFile)) {
         return false;
     }
@@ -181,14 +187,15 @@ function isSqliteModeActive(cwd, mode) {
  *
  * @param mode - The mode to check
  * @param cwd - Working directory
+ * @param sessionId - Optional session ID to check session-scoped state
  * @returns true if the mode is active
  */
-export function isModeActive(mode, cwd) {
+export function isModeActive(mode, cwd, sessionId) {
     const config = MODE_CONFIGS[mode];
     if (config.isSqlite) {
         return isSqliteModeActive(cwd, mode);
     }
-    return isJsonModeActive(cwd, mode);
+    return isJsonModeActive(cwd, mode, sessionId);
 }
 /**
  * Check if a mode has active state (file exists)
@@ -200,10 +207,10 @@ export function hasModeState(cwd, mode) {
 /**
  * Get all modes that currently have state files
  */
-export function getActiveModes(cwd) {
+export function getActiveModes(cwd, sessionId) {
     const modes = [];
     for (const mode of Object.keys(MODE_CONFIGS)) {
-        if (isModeActive(mode, cwd)) {
+        if (isModeActive(mode, cwd, sessionId)) {
             modes.push(mode);
         }
     }
@@ -240,10 +247,10 @@ export function getActiveExclusiveMode(cwd) {
  * @returns CanStartResult with allowed status and blocker info
  */
 export function canStartMode(mode, cwd) {
-    // Check for mutually exclusive modes
+    // Check for mutually exclusive modes across all sessions
     if (EXCLUSIVE_MODES.includes(mode)) {
         for (const exclusiveMode of EXCLUSIVE_MODES) {
-            if (exclusiveMode !== mode && isModeActive(exclusiveMode, cwd)) {
+            if (exclusiveMode !== mode && isModeActiveInAnySession(exclusiveMode, cwd)) {
                 const config = MODE_CONFIGS[exclusiveMode];
                 return {
                     allowed: false,
@@ -259,13 +266,14 @@ export function canStartMode(mode, cwd) {
  * Get status of all modes
  *
  * @param cwd - Working directory
+ * @param sessionId - Optional session ID to check session-scoped state
  * @returns Array of mode statuses
  */
-export function getAllModeStatuses(cwd) {
+export function getAllModeStatuses(cwd, sessionId) {
     return Object.keys(MODE_CONFIGS).map(mode => ({
         mode,
-        active: isModeActive(mode, cwd),
-        stateFilePath: getStateFilePath(cwd, mode)
+        active: isModeActive(mode, cwd, sessionId),
+        stateFilePath: getStateFilePath(cwd, mode, sessionId)
     }));
 }
 /**
@@ -273,15 +281,28 @@ export function getAllModeStatuses(cwd) {
  *
  * Deletes:
  * - Local state file (.omc/state/{mode}-state.json)
+ * - Session-scoped state file if sessionId provided
  * - Local marker file if applicable
  * - Global state file if applicable (~/.claude/{mode}-state.json)
  *
  * @returns true if all files were deleted successfully (or didn't exist)
  */
-export function clearModeState(mode, cwd) {
+export function clearModeState(mode, cwd, sessionId) {
     const config = MODE_CONFIGS[mode];
     let success = true;
-    // Delete local state file
+    // Delete session-scoped state file if sessionId provided
+    if (sessionId && !config.isSqlite) {
+        const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd);
+        if (existsSync(sessionStateFile)) {
+            try {
+                unlinkSync(sessionStateFile);
+            }
+            catch {
+                success = false;
+            }
+        }
+    }
+    // Delete local state file (legacy path)
     const stateFile = getStateFilePath(cwd, mode);
     if (existsSync(stateFile)) {
         try {
@@ -335,7 +356,106 @@ export function clearAllModeStates(cwd) {
             success = false;
         }
     }
+    // Also clean up session directories
+    try {
+        const sessionIds = listSessionIds(cwd);
+        for (const sid of sessionIds) {
+            const sessionDir = getSessionStateDir(sid, cwd);
+            if (existsSync(sessionDir)) {
+                rmSync(sessionDir, { recursive: true, force: true });
+            }
+        }
+    }
+    catch {
+        success = false;
+    }
     return success;
+}
+/**
+ * Check if a mode is active in any session
+ *
+ * @param mode - The mode to check
+ * @param cwd - Working directory
+ * @returns true if the mode is active in any session or legacy path
+ */
+export function isModeActiveInAnySession(mode, cwd) {
+    const config = MODE_CONFIGS[mode];
+    if (config.isSqlite) {
+        return isSqliteModeActive(cwd, mode);
+    }
+    // Check legacy path first
+    if (isJsonModeActive(cwd, mode)) {
+        return true;
+    }
+    // Scan all session dirs
+    const sessionIds = listSessionIds(cwd);
+    for (const sid of sessionIds) {
+        if (isJsonModeActive(cwd, mode, sid)) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * Get all session IDs that have a specific mode active
+ *
+ * @param mode - The mode to check
+ * @param cwd - Working directory
+ * @returns Array of session IDs with this mode active
+ */
+export function getActiveSessionsForMode(mode, cwd) {
+    const config = MODE_CONFIGS[mode];
+    if (config.isSqlite) {
+        return [];
+    }
+    const sessionIds = listSessionIds(cwd);
+    return sessionIds.filter(sid => isJsonModeActive(cwd, mode, sid));
+}
+/**
+ * Clear stale session directories
+ *
+ * Removes session directories that are either empty or have no recent activity.
+ *
+ * @param cwd - Working directory
+ * @param maxAgeMs - Maximum age in milliseconds (default: 24 hours)
+ * @returns Array of removed session IDs
+ */
+export function clearStaleSessionDirs(cwd, maxAgeMs = 24 * 60 * 60 * 1000) {
+    const sessionsDir = join(cwd, '.omc', 'state', 'sessions');
+    if (!existsSync(sessionsDir)) {
+        return [];
+    }
+    const removed = [];
+    const sessionIds = listSessionIds(cwd);
+    for (const sid of sessionIds) {
+        const sessionDir = getSessionStateDir(sid, cwd);
+        try {
+            const files = readdirSync(sessionDir);
+            // Remove empty directories
+            if (files.length === 0) {
+                rmdirSync(sessionDir);
+                removed.push(sid);
+                continue;
+            }
+            // Check modification time of any state file
+            let newest = 0;
+            for (const f of files) {
+                const stat = statSync(join(sessionDir, f));
+                if (stat.mtimeMs > newest) {
+                    newest = stat.mtimeMs;
+                }
+            }
+            // Remove if stale
+            if (Date.now() - newest > maxAgeMs) {
+                rmSync(sessionDir, { recursive: true, force: true });
+                removed.push(sid);
+            }
+        }
+        catch {
+            // Skip on error
+        }
+    }
+    return removed;
 }
 // ============================================================================
 // MARKER FILE MANAGEMENT (for SQLite-based modes)

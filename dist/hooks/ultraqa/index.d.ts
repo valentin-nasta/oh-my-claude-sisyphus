@@ -44,19 +44,19 @@ export interface UltraQAResult {
 /**
  * Read UltraQA state from disk
  */
-export declare function readUltraQAState(directory: string): UltraQAState | null;
+export declare function readUltraQAState(directory: string, sessionId?: string): UltraQAState | null;
 /**
  * Write UltraQA state to disk
  */
-export declare function writeUltraQAState(directory: string, state: UltraQAState): boolean;
+export declare function writeUltraQAState(directory: string, state: UltraQAState, sessionId?: string): boolean;
 /**
  * Clear UltraQA state
  */
-export declare function clearUltraQAState(directory: string): boolean;
+export declare function clearUltraQAState(directory: string, sessionId?: string): boolean;
 /**
  * Check if Ralph Loop is active (mutual exclusion check)
  */
-export declare function isRalphLoopActive(directory: string): boolean;
+export declare function isRalphLoopActive(directory: string, sessionId?: string): boolean;
 /**
  * Start a new UltraQA cycle
  * Returns false if Ralph Loop is already active (mutual exclusion)
@@ -68,7 +68,7 @@ export declare function startUltraQA(directory: string, goalType: UltraQAGoalTyp
 /**
  * Record a failure and increment cycle
  */
-export declare function recordFailure(directory: string, failureDescription: string): {
+export declare function recordFailure(directory: string, failureDescription: string, sessionId?: string): {
     state: UltraQAState | null;
     shouldExit: boolean;
     reason?: string;
@@ -76,15 +76,15 @@ export declare function recordFailure(directory: string, failureDescription: str
 /**
  * Mark UltraQA as successful
  */
-export declare function completeUltraQA(directory: string): UltraQAResult | null;
+export declare function completeUltraQA(directory: string, sessionId?: string): UltraQAResult | null;
 /**
  * Stop UltraQA with failure
  */
-export declare function stopUltraQA(directory: string, reason: 'max_cycles' | 'same_failure' | 'env_error', diagnosis: string): UltraQAResult | null;
+export declare function stopUltraQA(directory: string, reason: 'max_cycles' | 'same_failure' | 'env_error', diagnosis: string, sessionId?: string): UltraQAResult | null;
 /**
  * Cancel UltraQA
  */
-export declare function cancelUltraQA(directory: string): boolean;
+export declare function cancelUltraQA(directory: string, sessionId?: string): boolean;
 /**
  * Get goal command based on goal type
  */

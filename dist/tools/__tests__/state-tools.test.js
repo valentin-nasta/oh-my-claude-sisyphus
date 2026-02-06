@@ -98,5 +98,47 @@ describe('state-tools', () => {
             expect(result.content[0].text.includes('[ACTIVE]') || result.content[0].text.includes('[INACTIVE]')).toBe(true);
         });
     });
+    describe('session_id parameter', () => {
+        it('should write state with session_id to session-scoped path', async () => {
+            const sessionId = 'test-session-123';
+            const result = await stateWriteTool.handler({
+                mode: 'ultrawork',
+                state: { active: true },
+                session_id: sessionId,
+                workingDirectory: TEST_DIR,
+            });
+            expect(result.content[0].text).toContain('Successfully wrote');
+            const sessionPath = join(TEST_DIR, '.omc', 'state', 'sessions', sessionId, 'ultrawork-state.json');
+            expect(existsSync(sessionPath)).toBe(true);
+        });
+        it('should read state with session_id from session-scoped path', async () => {
+            const sessionId = 'test-session-read';
+            const sessionDir = join(TEST_DIR, '.omc', 'state', 'sessions', sessionId);
+            mkdirSync(sessionDir, { recursive: true });
+            writeFileSync(join(sessionDir, 'ralph-state.json'), JSON.stringify({ active: true, session_id: sessionId }));
+            const result = await stateReadTool.handler({
+                mode: 'ralph',
+                session_id: sessionId,
+                workingDirectory: TEST_DIR,
+            });
+            expect(result.content[0].text).toContain('active');
+        });
+        it('should clear session-specific state without affecting legacy', async () => {
+            const sessionId = 'test-session-clear';
+            // Create both legacy and session-scoped state
+            writeFileSync(join(TEST_DIR, '.omc', 'state', 'ralph-state.json'), JSON.stringify({ active: true, source: 'legacy' }));
+            const sessionDir = join(TEST_DIR, '.omc', 'state', 'sessions', sessionId);
+            mkdirSync(sessionDir, { recursive: true });
+            writeFileSync(join(sessionDir, 'ralph-state.json'), JSON.stringify({ active: true, source: 'session' }));
+            const result = await stateClearTool.handler({
+                mode: 'ralph',
+                session_id: sessionId,
+                workingDirectory: TEST_DIR,
+            });
+            expect(result.content[0].text).toContain('cleared');
+            // Session-scoped file should be gone
+            expect(existsSync(join(sessionDir, 'ralph-state.json'))).toBe(false);
+        });
+    });
 });
 //# sourceMappingURL=state-tools.test.js.map

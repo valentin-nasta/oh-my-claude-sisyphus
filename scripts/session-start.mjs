@@ -292,8 +292,17 @@ async function main() {
     }
 
     // Check for ultrawork state - only restore if session matches (issue #311)
-    const ultraworkState = readJsonFile(join(directory, '.omc', 'state', 'ultrawork-state.json'))
-      || readJsonFile(join(homedir(), '.omc', 'state', 'ultrawork-state.json'));
+    // Check session-scoped path first, then legacy paths
+    let ultraworkState = null;
+    if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+      ultraworkState = readJsonFile(join(directory, '.omc', 'state', 'sessions', sessionId, 'ultrawork-state.json'));
+    }
+    if (!ultraworkState) {
+      ultraworkState = readJsonFile(join(directory, '.omc', 'state', 'ultrawork-state.json'));
+    }
+    if (!ultraworkState) {
+      ultraworkState = readJsonFile(join(homedir(), '.omc', 'state', 'ultrawork-state.json'));
+    }
 
     if (ultraworkState?.active && (!ultraworkState.session_id || ultraworkState.session_id === sessionId)) {
       messages.push(`<session-restore>
@@ -312,7 +321,17 @@ Continue working in ultrawork mode until all tasks are complete.
     }
 
     // Check for ralph loop state
-    const ralphState = readJsonFile(join(directory, '.omc', 'ralph-state.json'));
+    // Check session-scoped path first, then legacy paths
+    let ralphState = null;
+    if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+      ralphState = readJsonFile(join(directory, '.omc', 'state', 'sessions', sessionId, 'ralph-state.json'));
+    }
+    if (!ralphState) {
+      ralphState = readJsonFile(join(directory, '.omc', 'state', 'ralph-state.json'));
+    }
+    if (!ralphState) {
+      ralphState = readJsonFile(join(directory, '.omc', 'ralph-state.json'));
+    }
     if (ralphState?.active) {
       messages.push(`<session-restore>
 

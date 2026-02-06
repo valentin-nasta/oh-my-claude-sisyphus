@@ -20985,6 +20985,7 @@ var import_path7 = require("path");
 var OmcPaths = {
   ROOT: ".omc",
   STATE: ".omc/state",
+  SESSIONS: ".omc/state/sessions",
   PLANS: ".omc/plans",
   RESEARCH: ".omc/research",
   NOTEPAD: ".omc/notepad.md",
@@ -21054,6 +21055,51 @@ function getWorktreeNotepadPath(worktreeRoot) {
 function getWorktreeProjectMemoryPath(worktreeRoot) {
   const root = worktreeRoot || getWorktreeRoot() || process.cwd();
   return (0, import_path7.join)(root, OmcPaths.PROJECT_MEMORY);
+}
+var SESSION_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
+function validateSessionId(sessionId) {
+  if (!sessionId) {
+    throw new Error("Session ID cannot be empty");
+  }
+  if (sessionId.includes("..") || sessionId.includes("/") || sessionId.includes("\\")) {
+    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId})`);
+  }
+  if (!SESSION_ID_REGEX.test(sessionId)) {
+    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId})`);
+  }
+}
+function resolveSessionStatePath(stateName, sessionId, worktreeRoot) {
+  validateSessionId(sessionId);
+  if (stateName === "swarm" || stateName === "swarm-state") {
+    throw new Error("Swarm uses SQLite (swarm.db), not session-scoped JSON state.");
+  }
+  const normalizedName = stateName.endsWith("-state") ? stateName : `${stateName}-state`;
+  return resolveOmcPath(`state/sessions/${sessionId}/${normalizedName}.json`, worktreeRoot);
+}
+function getSessionStateDir(sessionId, worktreeRoot) {
+  validateSessionId(sessionId);
+  const root = worktreeRoot || getWorktreeRoot() || process.cwd();
+  return (0, import_path7.join)(root, OmcPaths.SESSIONS, sessionId);
+}
+function listSessionIds(worktreeRoot) {
+  const root = worktreeRoot || getWorktreeRoot() || process.cwd();
+  const sessionsDir = (0, import_path7.join)(root, OmcPaths.SESSIONS);
+  if (!(0, import_fs6.existsSync)(sessionsDir)) {
+    return [];
+  }
+  try {
+    const entries = (0, import_fs6.readdirSync)(sessionsDir, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory() && SESSION_ID_REGEX.test(entry.name)).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+function ensureSessionStateDir(sessionId, worktreeRoot) {
+  const sessionDir = getSessionStateDir(sessionId, worktreeRoot);
+  if (!(0, import_fs6.existsSync)(sessionDir)) {
+    (0, import_fs6.mkdirSync)(sessionDir, { recursive: true });
+  }
+  return sessionDir;
 }
 function validateWorkingDirectory(workingDirectory) {
   const trustedRoot = getWorktreeRoot(process.cwd()) || process.cwd();
@@ -21136,8 +21182,11 @@ var MODE_CONFIGS = {
 function getStateDir(cwd) {
   return (0, import_path8.join)(cwd, ".omc", "state");
 }
-function getStateFilePath(cwd, mode) {
+function getStateFilePath(cwd, mode, sessionId) {
   const config2 = MODE_CONFIGS[mode];
+  if (sessionId && !config2.isSqlite) {
+    return resolveSessionStatePath(mode, sessionId, cwd);
+  }
   return (0, import_path8.join)(getStateDir(cwd), config2.stateFile);
 }
 function getMarkerFilePath(cwd, mode) {
@@ -21145,9 +21194,9 @@ function getMarkerFilePath(cwd, mode) {
   if (!config2.markerFile) return null;
   return (0, import_path8.join)(getStateDir(cwd), config2.markerFile);
 }
-function isJsonModeActive(cwd, mode) {
+function isJsonModeActive(cwd, mode, sessionId) {
   const config2 = MODE_CONFIGS[mode];
-  const stateFile = getStateFilePath(cwd, mode);
+  const stateFile = sessionId && !config2.isSqlite ? resolveSessionStatePath(mode, sessionId, cwd) : getStateFilePath(cwd, mode);
   if (!(0, import_fs7.existsSync)(stateFile)) {
     return false;
   }
@@ -21185,32 +21234,42 @@ function isSqliteModeActive(cwd, mode) {
   const dbPath = getStateFilePath(cwd, mode);
   return (0, import_fs7.existsSync)(dbPath);
 }
-function isModeActive(mode, cwd) {
+function isModeActive(mode, cwd, sessionId) {
   const config2 = MODE_CONFIGS[mode];
   if (config2.isSqlite) {
     return isSqliteModeActive(cwd, mode);
   }
-  return isJsonModeActive(cwd, mode);
+  return isJsonModeActive(cwd, mode, sessionId);
 }
-function getActiveModes(cwd) {
+function getActiveModes(cwd, sessionId) {
   const modes = [];
   for (const mode of Object.keys(MODE_CONFIGS)) {
-    if (isModeActive(mode, cwd)) {
+    if (isModeActive(mode, cwd, sessionId)) {
       modes.push(mode);
     }
   }
   return modes;
 }
-function getAllModeStatuses(cwd) {
+function getAllModeStatuses(cwd, sessionId) {
   return Object.keys(MODE_CONFIGS).map((mode) => ({
     mode,
-    active: isModeActive(mode, cwd),
-    stateFilePath: getStateFilePath(cwd, mode)
+    active: isModeActive(mode, cwd, sessionId),
+    stateFilePath: getStateFilePath(cwd, mode, sessionId)
   }));
 }
-function clearModeState(mode, cwd) {
+function clearModeState(mode, cwd, sessionId) {
   const config2 = MODE_CONFIGS[mode];
   let success = true;
+  if (sessionId && !config2.isSqlite) {
+    const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd);
+    if ((0, import_fs7.existsSync)(sessionStateFile)) {
+      try {
+        (0, import_fs7.unlinkSync)(sessionStateFile);
+      } catch {
+        success = false;
+      }
+    }
+  }
   const stateFile = getStateFilePath(cwd, mode);
   if ((0, import_fs7.existsSync)(stateFile)) {
     try {
@@ -21247,6 +21306,14 @@ function clearModeState(mode, cwd) {
   }
   return success;
 }
+function getActiveSessionsForMode(mode, cwd) {
+  const config2 = MODE_CONFIGS[mode];
+  if (config2.isSqlite) {
+    return [];
+  }
+  const sessionIds = listSessionIds(cwd);
+  return sessionIds.filter((sid) => isJsonModeActive(cwd, mode, sid));
+}
 
 // src/tools/state-tools.ts
 var EXECUTION_MODES = [
@@ -21271,20 +21338,22 @@ var stateReadTool = {
   description: "Read the current state for a specific mode (ralph, ultrawork, autopilot, etc.). Returns the JSON state data or indicates if no state exists.",
   schema: {
     mode: external_exports.enum(STATE_TOOL_MODES).describe("The mode to read state for"),
-    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)")
+    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)"),
+    session_id: external_exports.string().optional().describe("Optional session ID for session-scoped state isolation. When provided, reads from session-scoped paths (.omc/state/sessions/{session_id}/). When omitted, reads from legacy shared paths.")
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const statePath = getStatePath(mode, root);
+      const sessionId = session_id;
       if (mode === "swarm") {
-        if (!(0, import_fs8.existsSync)(statePath)) {
+        const statePath2 = getStatePath(mode, root);
+        if (!(0, import_fs8.existsSync)(statePath2)) {
           return {
             content: [{
               type: "text",
               text: `No state found for mode: swarm
-Note: Swarm uses SQLite (swarm.db), not JSON. Expected path: ${statePath}`
+Note: Swarm uses SQLite (swarm.db), not JSON. Expected path: ${statePath2}`
             }]
           };
         }
@@ -21293,33 +21362,112 @@ Note: Swarm uses SQLite (swarm.db), not JSON. Expected path: ${statePath}`
             type: "text",
             text: `## State for swarm
 
-Path: ${statePath}
+Path: ${statePath2}
 
 Note: Swarm uses SQLite database. Use swarm-specific tools to query state.`
           }]
         };
       }
-      if (!(0, import_fs8.existsSync)(statePath)) {
+      if (sessionId) {
+        validateSessionId(sessionId);
+        const statePath2 = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
+        if (!(0, import_fs8.existsSync)(statePath2)) {
+          return {
+            content: [{
+              type: "text",
+              text: `No state found for mode: ${mode} in session: ${sessionId}
+Expected path: ${statePath2}`
+            }]
+          };
+        }
+        const content = (0, import_fs8.readFileSync)(statePath2, "utf-8");
+        const state = JSON.parse(content);
         return {
           content: [{
             type: "text",
-            text: `No state found for mode: ${mode}
-Expected path: ${statePath}`
-          }]
-        };
-      }
-      const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
-      const state = JSON.parse(content);
-      return {
-        content: [{
-          type: "text",
-          text: `## State for ${mode}
+            text: `## State for ${mode} (session: ${sessionId})
 
-Path: ${statePath}
+Path: ${statePath2}
 
 \`\`\`json
 ${JSON.stringify(state, null, 2)}
 \`\`\``
+          }]
+        };
+      }
+      const statePath = getStatePath(mode, root);
+      const legacyExists = (0, import_fs8.existsSync)(statePath);
+      const sessionIds = listSessionIds(root);
+      const activeSessions = [];
+      for (const sid of sessionIds) {
+        const sessionStatePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sid) : resolveSessionStatePath(mode, sid, root);
+        if ((0, import_fs8.existsSync)(sessionStatePath)) {
+          activeSessions.push(sid);
+        }
+      }
+      if (!legacyExists && activeSessions.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: `No state found for mode: ${mode}
+Expected legacy path: ${statePath}
+No active sessions found.`
+          }]
+        };
+      }
+      let output = `## State for ${mode}
+
+`;
+      if (legacyExists) {
+        try {
+          const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
+          const state = JSON.parse(content);
+          output += `### Legacy Path (shared)
+Path: ${statePath}
+
+\`\`\`json
+${JSON.stringify(state, null, 2)}
+\`\`\`
+
+`;
+        } catch {
+          output += `### Legacy Path (shared)
+Path: ${statePath}
+*Error reading state file*
+
+`;
+        }
+      }
+      if (activeSessions.length > 0) {
+        output += `### Active Sessions (${activeSessions.length})
+
+`;
+        for (const sid of activeSessions) {
+          const sessionStatePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sid) : resolveSessionStatePath(mode, sid, root);
+          try {
+            const content = (0, import_fs8.readFileSync)(sessionStatePath, "utf-8");
+            const state = JSON.parse(content);
+            output += `**Session: ${sid}**
+Path: ${sessionStatePath}
+
+\`\`\`json
+${JSON.stringify(state, null, 2)}
+\`\`\`
+
+`;
+          } catch {
+            output += `**Session: ${sid}**
+Path: ${sessionStatePath}
+*Error reading state file*
+
+`;
+          }
+        }
+      }
+      return {
+        content: [{
+          type: "text",
+          text: output
         }]
       };
     } catch (error2) {
@@ -21347,7 +21495,8 @@ var stateWriteTool = {
     completed_at: external_exports.string().optional().describe("ISO timestamp when the mode completed"),
     error: external_exports.string().optional().describe("Error message if the mode failed"),
     state: external_exports.record(external_exports.string(), external_exports.unknown()).optional().describe("Additional custom state fields (merged with explicit parameters)"),
-    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)")
+    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)"),
+    session_id: external_exports.string().optional().describe("Optional session ID for session-scoped state isolation. When provided, writes to session-scoped paths (.omc/state/sessions/{session_id}/). When omitted, writes to legacy shared paths.")
   },
   handler: async (args) => {
     const {
@@ -21362,10 +21511,12 @@ var stateWriteTool = {
       completed_at,
       error: error2,
       state,
-      workingDirectory
+      workingDirectory,
+      session_id
     } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id;
       if (mode === "swarm") {
         return {
           content: [{
@@ -21374,8 +21525,15 @@ var stateWriteTool = {
           }]
         };
       }
-      ensureOmcDir("state", root);
-      const statePath = getStatePath(mode, root);
+      let statePath;
+      if (sessionId) {
+        validateSessionId(sessionId);
+        ensureSessionStateDir(sessionId, root);
+        statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
+      } else {
+        ensureOmcDir("state", root);
+        statePath = getStatePath(mode, root);
+      }
       const builtState = {};
       if (active !== void 0) builtState.active = active;
       if (iteration !== void 0) builtState.iteration = iteration;
@@ -21397,15 +21555,17 @@ var stateWriteTool = {
         ...builtState,
         _meta: {
           mode,
+          sessionId: sessionId || null,
           updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
           updatedBy: "state_write_tool"
         }
       };
       atomicWriteJsonSync(statePath, stateWithMeta);
+      const sessionInfo = sessionId ? ` (session: ${sessionId})` : " (legacy path)";
       return {
         content: [{
           type: "text",
-          text: `Successfully wrote state for ${mode}
+          text: `Successfully wrote state for ${mode}${sessionInfo}
 Path: ${statePath}
 
 \`\`\`json
@@ -21428,41 +21588,93 @@ var stateClearTool = {
   description: "Clear/delete state for a specific mode. Removes the state file and any associated marker files.",
   schema: {
     mode: external_exports.enum(STATE_TOOL_MODES).describe("The mode to clear state for"),
-    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)")
+    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)"),
+    session_id: external_exports.string().optional().describe("Optional session ID for session-scoped state isolation. When provided, clears session-specific state. When omitted, clears from all locations (legacy + all sessions).")
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      if (MODE_CONFIGS[mode]) {
-        const success = clearModeState(mode, root);
-        if (success) {
+      const sessionId = session_id;
+      if (sessionId) {
+        validateSessionId(sessionId);
+        if (MODE_CONFIGS[mode]) {
+          const success = clearModeState(mode, root, sessionId);
+          if (success) {
+            return {
+              content: [{
+                type: "text",
+                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}`
+              }]
+            };
+          } else {
+            return {
+              content: [{
+                type: "text",
+                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId}`
+              }]
+            };
+          }
+        }
+        const statePath = resolveSessionStatePath(mode, sessionId, root);
+        if ((0, import_fs8.existsSync)(statePath)) {
+          (0, import_fs8.unlinkSync)(statePath);
           return {
             content: [{
               type: "text",
-              text: `Successfully cleared state for mode: ${mode}`
+              text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}
+Removed: ${statePath}`
             }]
           };
         } else {
           return {
             content: [{
               type: "text",
-              text: `Warning: Some files could not be removed for mode: ${mode}`
+              text: `No state found to clear for mode: ${mode} in session: ${sessionId}`
             }]
           };
         }
       }
-      const statePath = getStatePath(mode, root);
-      if ((0, import_fs8.existsSync)(statePath)) {
-        (0, import_fs8.unlinkSync)(statePath);
-        return {
-          content: [{
-            type: "text",
-            text: `Successfully cleared state for mode: ${mode}
-Removed: ${statePath}`
-          }]
-        };
+      let clearedCount = 0;
+      const errors = [];
+      if (MODE_CONFIGS[mode]) {
+        if (clearModeState(mode, root)) {
+          clearedCount++;
+        } else {
+          errors.push("legacy path");
+        }
       } else {
+        const statePath = getStatePath(mode, root);
+        if ((0, import_fs8.existsSync)(statePath)) {
+          try {
+            (0, import_fs8.unlinkSync)(statePath);
+            clearedCount++;
+          } catch {
+            errors.push("legacy path");
+          }
+        }
+      }
+      const sessionIds = listSessionIds(root);
+      for (const sid of sessionIds) {
+        if (MODE_CONFIGS[mode]) {
+          if (clearModeState(mode, root, sid)) {
+            clearedCount++;
+          } else {
+            errors.push(`session: ${sid}`);
+          }
+        } else {
+          const statePath = resolveSessionStatePath(mode, sid, root);
+          if ((0, import_fs8.existsSync)(statePath)) {
+            try {
+              (0, import_fs8.unlinkSync)(statePath);
+              clearedCount++;
+            } catch {
+              errors.push(`session: ${sid}`);
+            }
+          }
+        }
+      }
+      if (clearedCount === 0 && errors.length === 0) {
         return {
           content: [{
             type: "text",
@@ -21470,6 +21682,18 @@ Removed: ${statePath}`
           }]
         };
       }
+      let message = `Cleared state for mode: ${mode}
+- Locations cleared: ${clearedCount}`;
+      if (errors.length > 0) {
+        message += `
+- Errors: ${errors.join(", ")}`;
+      }
+      return {
+        content: [{
+          type: "text",
+          text: message
+        }]
+      };
     } catch (error2) {
       return {
         content: [{
@@ -21484,25 +21708,89 @@ var stateListActiveTool = {
   name: "state_list_active",
   description: "List all currently active modes. Returns which modes have active state files.",
   schema: {
-    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)")
+    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)"),
+    session_id: external_exports.string().optional().describe("Optional session ID for session-scoped state isolation. When provided, shows modes active for that specific session. When omitted, shows all active modes across all sessions.")
   },
   handler: async (args) => {
-    const { workingDirectory } = args;
+    const { workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const activeModes = [...getActiveModes(root)];
+      const sessionId = session_id;
+      if (sessionId) {
+        validateSessionId(sessionId);
+        const activeModes = [...getActiveModes(root, sessionId)];
+        try {
+          const ralplanPath2 = resolveSessionStatePath("ralplan", sessionId, root);
+          if ((0, import_fs8.existsSync)(ralplanPath2)) {
+            const content = (0, import_fs8.readFileSync)(ralplanPath2, "utf-8");
+            const state = JSON.parse(content);
+            if (state.active) {
+              activeModes.push("ralplan");
+            }
+          }
+        } catch {
+        }
+        if (activeModes.length === 0) {
+          return {
+            content: [{
+              type: "text",
+              text: `## Active Modes (session: ${sessionId})
+
+No modes are currently active in this session.`
+            }]
+          };
+        }
+        const modeList = activeModes.map((mode) => `- **${mode}**`).join("\n");
+        return {
+          content: [{
+            type: "text",
+            text: `## Active Modes (session: ${sessionId}, ${activeModes.length})
+
+${modeList}`
+          }]
+        };
+      }
+      const modeSessionMap = /* @__PURE__ */ new Map();
+      const legacyActiveModes = [...getActiveModes(root)];
       const ralplanPath = getStatePath("ralplan", root);
       if ((0, import_fs8.existsSync)(ralplanPath)) {
         try {
           const content = (0, import_fs8.readFileSync)(ralplanPath, "utf-8");
           const state = JSON.parse(content);
           if (state.active) {
-            activeModes.push("ralplan");
+            legacyActiveModes.push("ralplan");
           }
         } catch {
         }
       }
-      if (activeModes.length === 0) {
+      for (const mode of legacyActiveModes) {
+        if (!modeSessionMap.has(mode)) {
+          modeSessionMap.set(mode, []);
+        }
+        modeSessionMap.get(mode).push("legacy");
+      }
+      const sessionIds = listSessionIds(root);
+      for (const sid of sessionIds) {
+        const sessionActiveModes = [...getActiveModes(root, sid)];
+        try {
+          const ralplanSessionPath = resolveSessionStatePath("ralplan", sid, root);
+          if ((0, import_fs8.existsSync)(ralplanSessionPath)) {
+            const content = (0, import_fs8.readFileSync)(ralplanSessionPath, "utf-8");
+            const state = JSON.parse(content);
+            if (state.active) {
+              sessionActiveModes.push("ralplan");
+            }
+          }
+        } catch {
+        }
+        for (const mode of sessionActiveModes) {
+          if (!modeSessionMap.has(mode)) {
+            modeSessionMap.set(mode, []);
+          }
+          modeSessionMap.get(mode).push(sid);
+        }
+      }
+      if (modeSessionMap.size === 0) {
         return {
           content: [{
             type: "text",
@@ -21510,13 +21798,15 @@ var stateListActiveTool = {
           }]
         };
       }
-      const modeList = activeModes.map((mode) => `- **${mode}**`).join("\n");
+      const lines = [`## Active Modes (${modeSessionMap.size})
+`];
+      for (const [mode, sessions] of Array.from(modeSessionMap.entries())) {
+        lines.push(`- **${mode}** (${sessions.join(", ")})`);
+      }
       return {
         content: [{
           type: "text",
-          text: `## Active Modes (${activeModes.length})
-
-${modeList}`
+          text: lines.join("\n")
         }]
       };
     } catch (error2) {
@@ -21534,58 +21824,115 @@ var stateGetStatusTool = {
   description: "Get detailed status for a specific mode or all modes. Shows active status, file paths, and state contents.",
   schema: {
     mode: external_exports.enum(STATE_TOOL_MODES).optional().describe("Specific mode to check (omit for all modes)"),
-    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)")
+    workingDirectory: external_exports.string().optional().describe("Working directory (defaults to cwd)"),
+    session_id: external_exports.string().optional().describe("Optional session ID for session-scoped state isolation. When provided, includes session info in the status output. When omitted, shows status across all sessions.")
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id;
       if (mode) {
-        const statePath = getStatePath(mode, root);
-        const active = MODE_CONFIGS[mode] ? isModeActive(mode, root) : (0, import_fs8.existsSync)(statePath) && (() => {
+        const lines2 = [`## Status: ${mode}
+`];
+        if (sessionId) {
+          validateSessionId(sessionId);
+          const statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
+          const active = MODE_CONFIGS[mode] ? isModeActive(mode, root, sessionId) : (0, import_fs8.existsSync)(statePath) && (() => {
+            try {
+              const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
+              const state = JSON.parse(content);
+              return state.active === true;
+            } catch {
+              return false;
+            }
+          })();
+          let statePreview = "No state file";
+          if ((0, import_fs8.existsSync)(statePath)) {
+            try {
+              const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
+              const state = JSON.parse(content);
+              statePreview = JSON.stringify(state, null, 2).slice(0, 500);
+              if (statePreview.length >= 500) statePreview += "\n...(truncated)";
+            } catch {
+              statePreview = "Error reading state file";
+            }
+          }
+          lines2.push(`### Session: ${sessionId}`);
+          lines2.push(`- **Active:** ${active ? "Yes" : "No"}`);
+          lines2.push(`- **State Path:** ${statePath}`);
+          lines2.push(`- **Exists:** ${(0, import_fs8.existsSync)(statePath) ? "Yes" : "No"}`);
+          lines2.push(`
+### State Preview
+\`\`\`json
+${statePreview}
+\`\`\``);
+          return {
+            content: [{
+              type: "text",
+              text: lines2.join("\n")
+            }]
+          };
+        }
+        const legacyPath = getStatePath(mode, root);
+        const legacyActive = MODE_CONFIGS[mode] ? isModeActive(mode, root) : (0, import_fs8.existsSync)(legacyPath) && (() => {
           try {
-            const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
+            const content = (0, import_fs8.readFileSync)(legacyPath, "utf-8");
             const state = JSON.parse(content);
             return state.active === true;
           } catch {
             return false;
           }
         })();
-        let statePreview = "No state file";
-        if ((0, import_fs8.existsSync)(statePath)) {
+        lines2.push(`### Legacy Path`);
+        lines2.push(`- **Active:** ${legacyActive ? "Yes" : "No"}`);
+        lines2.push(`- **State Path:** ${legacyPath}`);
+        lines2.push(`- **Exists:** ${(0, import_fs8.existsSync)(legacyPath) ? "Yes" : "No"}
+`);
+        const activeSessions = MODE_CONFIGS[mode] ? getActiveSessionsForMode(mode, root) : listSessionIds(root).filter((sid) => {
           try {
-            const content = (0, import_fs8.readFileSync)(statePath, "utf-8");
-            const state = JSON.parse(content);
-            statePreview = JSON.stringify(state, null, 2).slice(0, 500);
-            if (statePreview.length >= 500) statePreview += "\n...(truncated)";
+            const sessionPath = resolveSessionStatePath(mode, sid, root);
+            if ((0, import_fs8.existsSync)(sessionPath)) {
+              const content = (0, import_fs8.readFileSync)(sessionPath, "utf-8");
+              const state = JSON.parse(content);
+              return state.active === true;
+            }
+            return false;
           } catch {
-            statePreview = "Error reading state file";
+            return false;
           }
+        });
+        if (activeSessions.length > 0) {
+          lines2.push(`### Active Sessions (${activeSessions.length})`);
+          for (const sid of activeSessions) {
+            lines2.push(`- ${sid}`);
+          }
+        } else {
+          lines2.push(`### Active Sessions
+No active sessions for this mode.`);
         }
         return {
           content: [{
             type: "text",
-            text: `## Status: ${mode}
-
-- **Active:** ${active ? "Yes" : "No"}
-- **State Path:** ${statePath}
-- **Exists:** ${(0, import_fs8.existsSync)(statePath) ? "Yes" : "No"}
-
-### State Preview
-\`\`\`json
-${statePreview}
-\`\`\``
+            text: lines2.join("\n")
           }]
         };
       }
-      const statuses = getAllModeStatuses(root);
-      const lines = ["## All Mode Statuses\n"];
+      const statuses = getAllModeStatuses(root, sessionId);
+      const lines = sessionId ? [`## All Mode Statuses (session: ${sessionId})
+`] : ["## All Mode Statuses\n"];
       for (const status of statuses) {
         const icon = status.active ? "[ACTIVE]" : "[INACTIVE]";
         lines.push(`${icon} **${status.mode}**: ${status.active ? "Active" : "Inactive"}`);
         lines.push(`   Path: \`${status.stateFilePath}\``);
+        if (!sessionId && MODE_CONFIGS[status.mode]) {
+          const activeSessions = getActiveSessionsForMode(status.mode, root);
+          if (activeSessions.length > 0) {
+            lines.push(`   Active sessions: ${activeSessions.join(", ")}`);
+          }
+        }
       }
-      const ralplanPath = getStatePath("ralplan", root);
+      const ralplanPath = sessionId ? resolveSessionStatePath("ralplan", sessionId, root) : getStatePath("ralplan", root);
       let ralplanActive = false;
       if ((0, import_fs8.existsSync)(ralplanPath)) {
         try {

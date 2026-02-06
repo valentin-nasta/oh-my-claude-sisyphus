@@ -22,6 +22,7 @@ import {
   readUltraQAState
 } from '../ultraqa/index.js';
 import { canStartMode } from '../mode-registry/index.js';
+import { resolveSessionStatePath, ensureSessionStateDir } from '../../lib/worktree-paths.js';
 
 const STATE_FILE = 'autopilot-state.json';
 const SPEC_DIR = 'autopilot';
@@ -33,7 +34,10 @@ const SPEC_DIR = 'autopilot';
 /**
  * Get the state file path
  */
-function getStateFilePath(directory: string): string {
+function getStateFilePath(directory: string, sessionId?: string): string {
+  if (sessionId) {
+    return resolveSessionStatePath('autopilot', sessionId, directory);
+  }
   const omcDir = join(directory, '.omc');
   return join(omcDir, 'state', STATE_FILE);
 }
@@ -41,7 +45,11 @@ function getStateFilePath(directory: string): string {
 /**
  * Ensure the .omc/state directory exists
  */
-function ensureStateDir(directory: string): void {
+function ensureStateDir(directory: string, sessionId?: string): void {
+  if (sessionId) {
+    ensureSessionStateDir(sessionId, directory);
+    return;
+  }
   const stateDir = join(directory, '.omc', 'state');
   if (!existsSync(stateDir)) {
     mkdirSync(stateDir, { recursive: true });
@@ -63,9 +71,22 @@ export function ensureAutopilotDir(directory: string): string {
 /**
  * Read autopilot state from disk
  */
-export function readAutopilotState(directory: string): AutopilotState | null {
-  const stateFile = getStateFilePath(directory);
+export function readAutopilotState(directory: string, sessionId?: string): AutopilotState | null {
+  // Try session-scoped path first
+  if (sessionId) {
+    const sessionFile = getStateFilePath(directory, sessionId);
+    if (existsSync(sessionFile)) {
+      try {
+        const content = readFileSync(sessionFile, 'utf-8');
+        return JSON.parse(content);
+      } catch {
+        // Fall through to legacy path
+      }
+    }
+  }
 
+  // Fallback to legacy path
+  const stateFile = getStateFilePath(directory);
   if (!existsSync(stateFile)) {
     return null;
   }
@@ -81,10 +102,10 @@ export function readAutopilotState(directory: string): AutopilotState | null {
 /**
  * Write autopilot state to disk
  */
-export function writeAutopilotState(directory: string, state: AutopilotState): boolean {
+export function writeAutopilotState(directory: string, state: AutopilotState, sessionId?: string): boolean {
   try {
-    ensureStateDir(directory);
-    const stateFile = getStateFilePath(directory);
+    ensureStateDir(directory, sessionId);
+    const stateFile = getStateFilePath(directory, sessionId);
     writeFileSync(stateFile, JSON.stringify(state, null, 2));
     return true;
   } catch {
@@ -95,8 +116,8 @@ export function writeAutopilotState(directory: string, state: AutopilotState): b
 /**
  * Clear autopilot state
  */
-export function clearAutopilotState(directory: string): boolean {
-  const stateFile = getStateFilePath(directory);
+export function clearAutopilotState(directory: string, sessionId?: string): boolean {
+  const stateFile = getStateFilePath(directory, sessionId);
 
   if (!existsSync(stateFile)) {
     return true;
@@ -113,8 +134,8 @@ export function clearAutopilotState(directory: string): boolean {
 /**
  * Check if autopilot is active
  */
-export function isAutopilotActive(directory: string): boolean {
-  const state = readAutopilotState(directory);
+export function isAutopilotActive(directory: string, sessionId?: string): boolean {
+  const state = readAutopilotState(directory, sessionId);
   return state !== null && state.active === true;
 }
 
@@ -191,7 +212,7 @@ export function initAutopilot(
   };
 
   ensureAutopilotDir(directory);
-  writeAutopilotState(directory, state);
+  writeAutopilotState(directory, state, sessionId);
 
   return state;
 }
@@ -201,9 +222,10 @@ export function initAutopilot(
  */
 export function transitionPhase(
   directory: string,
-  newPhase: AutopilotPhase
+  newPhase: AutopilotPhase,
+  sessionId?: string
 ): AutopilotState | null {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
 
   if (!state || !state.active) {
     return null;
@@ -228,19 +250,19 @@ export function transitionPhase(
     state.active = false;
   }
 
-  writeAutopilotState(directory, state);
+  writeAutopilotState(directory, state, sessionId);
   return state;
 }
 
 /**
  * Increment the agent spawn counter
  */
-export function incrementAgentCount(directory: string, count: number = 1): boolean {
-  const state = readAutopilotState(directory);
+export function incrementAgentCount(directory: string, count: number = 1, sessionId?: string): boolean {
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.total_agents_spawned += count;
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**
@@ -248,13 +270,14 @@ export function incrementAgentCount(directory: string, count: number = 1): boole
  */
 export function updateExpansion(
   directory: string,
-  updates: Partial<AutopilotState['expansion']>
+  updates: Partial<AutopilotState['expansion']>,
+  sessionId?: string
 ): boolean {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.expansion = { ...state.expansion, ...updates };
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**
@@ -262,13 +285,14 @@ export function updateExpansion(
  */
 export function updatePlanning(
   directory: string,
-  updates: Partial<AutopilotState['planning']>
+  updates: Partial<AutopilotState['planning']>,
+  sessionId?: string
 ): boolean {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.planning = { ...state.planning, ...updates };
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**
@@ -276,13 +300,14 @@ export function updatePlanning(
  */
 export function updateExecution(
   directory: string,
-  updates: Partial<AutopilotState['execution']>
+  updates: Partial<AutopilotState['execution']>,
+  sessionId?: string
 ): boolean {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.execution = { ...state.execution, ...updates };
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**
@@ -290,13 +315,14 @@ export function updateExecution(
  */
 export function updateQA(
   directory: string,
-  updates: Partial<AutopilotState['qa']>
+  updates: Partial<AutopilotState['qa']>,
+  sessionId?: string
 ): boolean {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.qa = { ...state.qa, ...updates };
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**
@@ -304,13 +330,14 @@ export function updateQA(
  */
 export function updateValidation(
   directory: string,
-  updates: Partial<AutopilotState['validation']>
+  updates: Partial<AutopilotState['validation']>,
+  sessionId?: string
 ): boolean {
-  const state = readAutopilotState(directory);
+  const state = readAutopilotState(directory, sessionId);
   if (!state) return false;
 
   state.validation = { ...state.validation, ...updates };
-  return writeAutopilotState(directory, state);
+  return writeAutopilotState(directory, state, sessionId);
 }
 
 /**

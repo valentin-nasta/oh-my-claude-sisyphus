@@ -6,13 +6,14 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync, mkdirSync, realpathSync } from 'fs';
+import { existsSync, mkdirSync, realpathSync, readdirSync } from 'fs';
 import { resolve, normalize, relative, sep, join, isAbsolute } from 'path';
 
 /** Standard .omc subdirectories */
 export const OmcPaths = {
   ROOT: '.omc',
   STATE: '.omc/state',
+  SESSIONS: '.omc/state/sessions',
   PLANS: '.omc/plans',
   RESEARCH: '.omc/research',
   NOTEPAD: '.omc/notepad.md',
@@ -245,6 +246,107 @@ export function ensureAllOmcDirs(worktreeRoot?: string): void {
  */
 export function clearWorktreeCache(): void {
   worktreeCache = null;
+}
+
+// ============================================================================
+// SESSION-SCOPED STATE PATHS
+// ============================================================================
+
+/** Regex for valid session IDs: alphanumeric, hyphens, underscores, max 256 chars */
+const SESSION_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
+
+/**
+ * Validate a session ID to prevent path traversal attacks.
+ *
+ * @param sessionId - The session ID to validate
+ * @throws Error if session ID is invalid
+ */
+export function validateSessionId(sessionId: string): void {
+  if (!sessionId) {
+    throw new Error('Session ID cannot be empty');
+  }
+  if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) {
+    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId})`);
+  }
+  if (!SESSION_ID_REGEX.test(sessionId)) {
+    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId})`);
+  }
+}
+
+/**
+ * Resolve a session-scoped state file path.
+ * Path: .omc/state/sessions/{sessionId}/{mode}-state.json
+ *
+ * @param stateName - State name (e.g., "ralph", "ultrawork")
+ * @param sessionId - Session identifier
+ * @param worktreeRoot - Optional worktree root
+ * @returns Absolute path to session-scoped state file
+ */
+export function resolveSessionStatePath(stateName: string, sessionId: string, worktreeRoot?: string): string {
+  validateSessionId(sessionId);
+
+  // Special case: swarm uses SQLite, not session-scoped JSON
+  if (stateName === 'swarm' || stateName === 'swarm-state') {
+    throw new Error('Swarm uses SQLite (swarm.db), not session-scoped JSON state.');
+  }
+
+  const normalizedName = stateName.endsWith('-state') ? stateName : `${stateName}-state`;
+  return resolveOmcPath(`state/sessions/${sessionId}/${normalizedName}.json`, worktreeRoot);
+}
+
+/**
+ * Get the session state directory path.
+ * Path: .omc/state/sessions/{sessionId}/
+ *
+ * @param sessionId - Session identifier
+ * @param worktreeRoot - Optional worktree root
+ * @returns Absolute path to session state directory
+ */
+export function getSessionStateDir(sessionId: string, worktreeRoot?: string): string {
+  validateSessionId(sessionId);
+  const root = worktreeRoot || getWorktreeRoot() || process.cwd();
+  return join(root, OmcPaths.SESSIONS, sessionId);
+}
+
+/**
+ * List all session IDs that have state directories.
+ *
+ * @param worktreeRoot - Optional worktree root
+ * @returns Array of session IDs
+ */
+export function listSessionIds(worktreeRoot?: string): string[] {
+  const root = worktreeRoot || getWorktreeRoot() || process.cwd();
+  const sessionsDir = join(root, OmcPaths.SESSIONS);
+
+  if (!existsSync(sessionsDir)) {
+    return [];
+  }
+
+  try {
+    const entries = readdirSync(sessionsDir, { withFileTypes: true });
+    return entries
+      .filter(entry => entry.isDirectory() && SESSION_ID_REGEX.test(entry.name))
+      .map(entry => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Ensure the session state directory exists.
+ *
+ * @param sessionId - Session identifier
+ * @param worktreeRoot - Optional worktree root
+ * @returns Absolute path to the session state directory
+ */
+export function ensureSessionStateDir(sessionId: string, worktreeRoot?: string): string {
+  const sessionDir = getSessionStateDir(sessionId, worktreeRoot);
+
+  if (!existsSync(sessionDir)) {
+    mkdirSync(sessionDir, { recursive: true });
+  }
+
+  return sessionDir;
 }
 
 /**

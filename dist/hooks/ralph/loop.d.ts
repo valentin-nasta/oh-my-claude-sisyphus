@@ -10,7 +10,7 @@
  * Ported from oh-my-opencode's ralph hook.
  */
 import { type PRDStatus, type UserStory } from "./prd.js";
-export declare function isUltraQAActive(directory: string): boolean;
+export declare function isUltraQAActive(directory: string, sessionId?: string): boolean;
 export interface RalphLoopState {
     /** Whether the loop is currently active */
     active: boolean;
@@ -47,23 +47,23 @@ export interface RalphLoopHook {
 /**
  * Read Ralph Loop state from disk
  */
-export declare function readRalphState(directory: string): RalphLoopState | null;
+export declare function readRalphState(directory: string, sessionId?: string): RalphLoopState | null;
 /**
  * Write Ralph Loop state to disk
  */
-export declare function writeRalphState(directory: string, state: RalphLoopState): boolean;
+export declare function writeRalphState(directory: string, state: RalphLoopState, sessionId?: string): boolean;
 /**
  * Clear Ralph Loop state
  */
-export declare function clearRalphState(directory: string): boolean;
+export declare function clearRalphState(directory: string, sessionId?: string): boolean;
 /**
  * Clear ultrawork state (only if linked to ralph)
  */
-export declare function clearLinkedUltraworkState(directory: string): boolean;
+export declare function clearLinkedUltraworkState(directory: string, sessionId?: string): boolean;
 /**
  * Increment Ralph Loop iteration
  */
-export declare function incrementRalphIteration(directory: string): RalphLoopState | null;
+export declare function incrementRalphIteration(directory: string, sessionId?: string): RalphLoopState | null;
 /**
  * Create a Ralph Loop hook instance
  */

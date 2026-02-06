@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG } from './types.js';
 import { readRalphState, clearRalphState, clearLinkedUltraworkState } from '../ralph/index.js';
 import { startUltraQA, clearUltraQAState, readUltraQAState } from '../ultraqa/index.js';
 import { canStartMode } from '../mode-registry/index.js';
+import { resolveSessionStatePath, ensureSessionStateDir } from '../../lib/worktree-paths.js';
 const STATE_FILE = 'autopilot-state.json';
 const SPEC_DIR = 'autopilot';
 // ============================================================================
@@ -20,14 +21,21 @@ const SPEC_DIR = 'autopilot';
 /**
  * Get the state file path
  */
-function getStateFilePath(directory) {
+function getStateFilePath(directory, sessionId) {
+    if (sessionId) {
+        return resolveSessionStatePath('autopilot', sessionId, directory);
+    }
     const omcDir = join(directory, '.omc');
     return join(omcDir, 'state', STATE_FILE);
 }
 /**
  * Ensure the .omc/state directory exists
  */
-function ensureStateDir(directory) {
+function ensureStateDir(directory, sessionId) {
+    if (sessionId) {
+        ensureSessionStateDir(sessionId, directory);
+        return;
+    }
     const stateDir = join(directory, '.omc', 'state');
     if (!existsSync(stateDir)) {
         mkdirSync(stateDir, { recursive: true });
@@ -47,7 +55,21 @@ export function ensureAutopilotDir(directory) {
 /**
  * Read autopilot state from disk
  */
-export function readAutopilotState(directory) {
+export function readAutopilotState(directory, sessionId) {
+    // Try session-scoped path first
+    if (sessionId) {
+        const sessionFile = getStateFilePath(directory, sessionId);
+        if (existsSync(sessionFile)) {
+            try {
+                const content = readFileSync(sessionFile, 'utf-8');
+                return JSON.parse(content);
+            }
+            catch {
+                // Fall through to legacy path
+            }
+        }
+    }
+    // Fallback to legacy path
     const stateFile = getStateFilePath(directory);
     if (!existsSync(stateFile)) {
         return null;
@@ -63,10 +85,10 @@ export function readAutopilotState(directory) {
 /**
  * Write autopilot state to disk
  */
-export function writeAutopilotState(directory, state) {
+export function writeAutopilotState(directory, state, sessionId) {
     try {
-        ensureStateDir(directory);
-        const stateFile = getStateFilePath(directory);
+        ensureStateDir(directory, sessionId);
+        const stateFile = getStateFilePath(directory, sessionId);
         writeFileSync(stateFile, JSON.stringify(state, null, 2));
         return true;
     }
@@ -77,8 +99,8 @@ export function writeAutopilotState(directory, state) {
 /**
  * Clear autopilot state
  */
-export function clearAutopilotState(directory) {
-    const stateFile = getStateFilePath(directory);
+export function clearAutopilotState(directory, sessionId) {
+    const stateFile = getStateFilePath(directory, sessionId);
     if (!existsSync(stateFile)) {
         return true;
     }
@@ -93,8 +115,8 @@ export function clearAutopilotState(directory) {
 /**
  * Check if autopilot is active
  */
-export function isAutopilotActive(directory) {
-    const state = readAutopilotState(directory);
+export function isAutopilotActive(directory, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     return state !== null && state.active === true;
 }
 /**
@@ -156,14 +178,14 @@ export function initAutopilot(directory, idea, sessionId, config) {
         project_path: directory
     };
     ensureAutopilotDir(directory);
-    writeAutopilotState(directory, state);
+    writeAutopilotState(directory, state, sessionId);
     return state;
 }
 /**
  * Transition to a new phase
  */
-export function transitionPhase(directory, newPhase) {
-    const state = readAutopilotState(directory);
+export function transitionPhase(directory, newPhase, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state || !state.active) {
         return null;
     }
@@ -182,68 +204,68 @@ export function transitionPhase(directory, newPhase) {
         state.completed_at = now;
         state.active = false;
     }
-    writeAutopilotState(directory, state);
+    writeAutopilotState(directory, state, sessionId);
     return state;
 }
 /**
  * Increment the agent spawn counter
  */
-export function incrementAgentCount(directory, count = 1) {
-    const state = readAutopilotState(directory);
+export function incrementAgentCount(directory, count = 1, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.total_agents_spawned += count;
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Update expansion phase data
  */
-export function updateExpansion(directory, updates) {
-    const state = readAutopilotState(directory);
+export function updateExpansion(directory, updates, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.expansion = { ...state.expansion, ...updates };
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Update planning phase data
  */
-export function updatePlanning(directory, updates) {
-    const state = readAutopilotState(directory);
+export function updatePlanning(directory, updates, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.planning = { ...state.planning, ...updates };
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Update execution phase data
  */
-export function updateExecution(directory, updates) {
-    const state = readAutopilotState(directory);
+export function updateExecution(directory, updates, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.execution = { ...state.execution, ...updates };
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Update QA phase data
  */
-export function updateQA(directory, updates) {
-    const state = readAutopilotState(directory);
+export function updateQA(directory, updates, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.qa = { ...state.qa, ...updates };
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Update validation phase data
  */
-export function updateValidation(directory, updates) {
-    const state = readAutopilotState(directory);
+export function updateValidation(directory, updates, sessionId) {
+    const state = readAutopilotState(directory, sessionId);
     if (!state)
         return false;
     state.validation = { ...state.validation, ...updates };
-    return writeAutopilotState(directory, state);
+    return writeAutopilotState(directory, state, sessionId);
 }
 /**
  * Get the spec file path

@@ -120,6 +120,23 @@ function readStateFile(stateDir, filename) {
 }
 
 /**
+ * Read state file with session-scoped path support and fallback to legacy path.
+ */
+function readStateFileWithSession(stateDir, filename, sessionId) {
+  // Try session-scoped path first
+  if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+    const sessionsDir = join(stateDir, 'sessions', sessionId);
+    const sessionPath = join(sessionsDir, filename);
+    const state = readJsonFile(sessionPath);
+    if (state) {
+      return { state, path: sessionPath, isGlobal: false };
+    }
+  }
+  // Fall back to legacy path
+  return readStateFile(stateDir, filename);
+}
+
+/**
  * Count incomplete Tasks from Claude Code's native Task system.
  */
 function countIncompleteTasks(sessionId) {
@@ -290,14 +307,14 @@ async function main() {
       return;
     }
 
-    // Read all mode states (local-only)
-    const ralph = readStateFile(stateDir, "ralph-state.json");
-    const autopilot = readStateFile(stateDir, "autopilot-state.json");
-    const ultrapilot = readStateFile(stateDir, "ultrapilot-state.json");
-    const ultrawork = readStateFile(stateDir, "ultrawork-state.json");
-    const ecomode = readStateFile(stateDir, "ecomode-state.json");
-    const ultraqa = readStateFile(stateDir, "ultraqa-state.json");
-    const pipeline = readStateFile(stateDir, "pipeline-state.json");
+    // Read all mode states (session-scoped with legacy fallback)
+    const ralph = readStateFileWithSession(stateDir, "ralph-state.json", sessionId);
+    const autopilot = readStateFileWithSession(stateDir, "autopilot-state.json", sessionId);
+    const ultrapilot = readStateFileWithSession(stateDir, "ultrapilot-state.json", sessionId);
+    const ultrawork = readStateFileWithSession(stateDir, "ultrawork-state.json", sessionId);
+    const ecomode = readStateFileWithSession(stateDir, "ecomode-state.json", sessionId);
+    const ultraqa = readStateFileWithSession(stateDir, "ultraqa-state.json", sessionId);
+    const pipeline = readStateFileWithSession(stateDir, "pipeline-state.json", sessionId);
 
     // Swarm uses swarm-summary.json (not swarm-state.json) + marker file
     const swarmMarker = existsSync(join(stateDir, "swarm-active.marker"));

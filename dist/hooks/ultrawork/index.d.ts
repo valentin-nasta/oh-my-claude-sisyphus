@@ -26,11 +26,11 @@ export interface UltraworkState {
 /**
  * Read Ultrawork state from disk (local only)
  */
-export declare function readUltraworkState(directory?: string): UltraworkState | null;
+export declare function readUltraworkState(directory?: string, sessionId?: string): UltraworkState | null;
 /**
  * Write Ultrawork state to disk (local only)
  */
-export declare function writeUltraworkState(state: UltraworkState, directory?: string): boolean;
+export declare function writeUltraworkState(state: UltraworkState, directory?: string, sessionId?: string): boolean;
 /**
  * Activate ultrawork mode
  */
@@ -38,11 +38,11 @@ export declare function activateUltrawork(prompt: string, sessionId?: string, di
 /**
  * Deactivate ultrawork mode
  */
-export declare function deactivateUltrawork(directory?: string): boolean;
+export declare function deactivateUltrawork(directory?: string, sessionId?: string): boolean;
 /**
  * Increment reinforcement count (called when mode is reinforced on stop)
  */
-export declare function incrementReinforcement(directory?: string): UltraworkState | null;
+export declare function incrementReinforcement(directory?: string, sessionId?: string): UltraworkState | null;
 /**
  * Check if ultrawork should be reinforced (active with pending todos)
  */
@@ -56,9 +56,9 @@ export declare function getUltraworkPersistenceMessage(state: UltraworkState): s
  */
 export declare function createUltraworkStateHook(directory: string): {
     activate: (prompt: string, sessionId?: string) => boolean;
-    deactivate: () => boolean;
-    getState: () => UltraworkState | null;
+    deactivate: (sessionId?: string) => boolean;
+    getState: (sessionId?: string) => UltraworkState | null;
     shouldReinforce: (sessionId?: string) => boolean;
-    incrementReinforcement: () => UltraworkState | null;
+    incrementReinforcement: (sessionId?: string) => UltraworkState | null;
 };
 //# sourceMappingURL=index.d.ts.map

@@ -12,6 +12,11 @@ import {
   resolveStatePath,
   ensureOmcDir,
   validateWorkingDirectory,
+  resolveSessionStatePath,
+  ensureSessionStateDir,
+  listSessionIds,
+  validateSessionId,
+  getSessionStateDir,
 } from '../lib/worktree-paths.js';
 import { atomicWriteJsonSync } from '../lib/atomic-write.js';
 import {
@@ -21,6 +26,8 @@ import {
   clearModeState,
   getStateFilePath,
   MODE_CONFIGS,
+  isModeActiveInAnySession,
+  getActiveSessionsForMode,
   type ExecutionMode
 } from '../hooks/mode-registry/index.js';
 import { ToolDefinition } from './types.js';
@@ -58,22 +65,25 @@ function getStatePath(mode: StateToolMode, root: string): string {
 export const stateReadTool: ToolDefinition<{
   mode: z.ZodEnum<typeof STATE_TOOL_MODES>;
   workingDirectory: z.ZodOptional<z.ZodString>;
+  session_id: z.ZodOptional<z.ZodString>;
 }> = {
   name: 'state_read',
   description: 'Read the current state for a specific mode (ralph, ultrawork, autopilot, etc.). Returns the JSON state data or indicates if no state exists.',
   schema: {
     mode: z.enum(STATE_TOOL_MODES).describe('The mode to read state for'),
     workingDirectory: z.string().optional().describe('Working directory (defaults to cwd)'),
+    session_id: z.string().optional().describe('Optional session ID for session-scoped state isolation. When provided, reads from session-scoped paths (.omc/state/sessions/{session_id}/). When omitted, reads from legacy shared paths.'),
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
 
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const statePath = getStatePath(mode, root);
+      const sessionId = session_id as string | undefined;
 
-      // Special handling for swarm (SQLite database)
+      // Special handling for swarm (SQLite database - no session support)
       if (mode === 'swarm') {
+        const statePath = getStatePath(mode, root);
         if (!existsSync(statePath)) {
           return {
             content: [{
@@ -90,22 +100,93 @@ export const stateReadTool: ToolDefinition<{
         };
       }
 
-      if (!existsSync(statePath)) {
+      // If session_id provided, read from session-scoped path
+      if (sessionId) {
+        validateSessionId(sessionId);
+        const statePath = MODE_CONFIGS[mode as ExecutionMode]
+          ? getStateFilePath(root, mode as ExecutionMode, sessionId)
+          : resolveSessionStatePath(mode, sessionId, root);
+
+        if (!existsSync(statePath)) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `No state found for mode: ${mode} in session: ${sessionId}\nExpected path: ${statePath}`
+            }]
+          };
+        }
+
+        const content = readFileSync(statePath, 'utf-8');
+        const state = JSON.parse(content);
+
         return {
           content: [{
             type: 'text' as const,
-            text: `No state found for mode: ${mode}\nExpected path: ${statePath}`
+            text: `## State for ${mode} (session: ${sessionId})\n\nPath: ${statePath}\n\n\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\``
           }]
         };
       }
 
-      const content = readFileSync(statePath, 'utf-8');
-      const state = JSON.parse(content);
+      // No session_id: scan all sessions and legacy path
+      const statePath = getStatePath(mode, root);
+      const legacyExists = existsSync(statePath);
+      const sessionIds = listSessionIds(root);
+      const activeSessions: string[] = [];
+
+      for (const sid of sessionIds) {
+        const sessionStatePath = MODE_CONFIGS[mode as ExecutionMode]
+          ? getStateFilePath(root, mode as ExecutionMode, sid)
+          : resolveSessionStatePath(mode, sid, root);
+
+        if (existsSync(sessionStatePath)) {
+          activeSessions.push(sid);
+        }
+      }
+
+      if (!legacyExists && activeSessions.length === 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `No state found for mode: ${mode}\nExpected legacy path: ${statePath}\nNo active sessions found.`
+          }]
+        };
+      }
+
+      let output = `## State for ${mode}\n\n`;
+
+      // Show legacy state if exists
+      if (legacyExists) {
+        try {
+          const content = readFileSync(statePath, 'utf-8');
+          const state = JSON.parse(content);
+          output += `### Legacy Path (shared)\nPath: ${statePath}\n\n\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\`\n\n`;
+        } catch {
+          output += `### Legacy Path (shared)\nPath: ${statePath}\n*Error reading state file*\n\n`;
+        }
+      }
+
+      // Show active sessions
+      if (activeSessions.length > 0) {
+        output += `### Active Sessions (${activeSessions.length})\n\n`;
+        for (const sid of activeSessions) {
+          const sessionStatePath = MODE_CONFIGS[mode as ExecutionMode]
+            ? getStateFilePath(root, mode as ExecutionMode, sid)
+            : resolveSessionStatePath(mode, sid, root);
+
+          try {
+            const content = readFileSync(sessionStatePath, 'utf-8');
+            const state = JSON.parse(content);
+            output += `**Session: ${sid}**\nPath: ${sessionStatePath}\n\n\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\`\n\n`;
+          } catch {
+            output += `**Session: ${sid}**\nPath: ${sessionStatePath}\n*Error reading state file*\n\n`;
+          }
+        }
+      }
 
       return {
         content: [{
           type: 'text' as const,
-          text: `## State for ${mode}\n\nPath: ${statePath}\n\n\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\``
+          text: output
         }]
       };
     } catch (error) {
@@ -136,6 +217,7 @@ export const stateWriteTool: ToolDefinition<{
   error: z.ZodOptional<z.ZodString>;
   state: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
   workingDirectory: z.ZodOptional<z.ZodString>;
+  session_id: z.ZodOptional<z.ZodString>;
 }> = {
   name: 'state_write',
   description: 'Write/update state for a specific mode. Creates the state file and directories if they do not exist. Common fields (active, iteration, phase, etc.) can be set directly as parameters. Additional custom fields can be passed via the optional `state` parameter. Note: swarm uses SQLite and cannot be written via this tool.',
@@ -152,6 +234,7 @@ export const stateWriteTool: ToolDefinition<{
     error: z.string().optional().describe('Error message if the mode failed'),
     state: z.record(z.string(), z.unknown()).optional().describe('Additional custom state fields (merged with explicit parameters)'),
     workingDirectory: z.string().optional().describe('Working directory (defaults to cwd)'),
+    session_id: z.string().optional().describe('Optional session ID for session-scoped state isolation. When provided, writes to session-scoped paths (.omc/state/sessions/{session_id}/). When omitted, writes to legacy shared paths.'),
   },
   handler: async (args) => {
     const {
@@ -166,11 +249,13 @@ export const stateWriteTool: ToolDefinition<{
       completed_at,
       error,
       state,
-      workingDirectory
+      workingDirectory,
+      session_id
     } = args;
 
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id as string | undefined;
 
       // Swarm uses SQLite - cannot be written via this tool
       if (mode === 'swarm') {
@@ -182,10 +267,18 @@ export const stateWriteTool: ToolDefinition<{
         };
       }
 
-      // Ensure state directory exists
-      ensureOmcDir('state', root);
-
-      const statePath = getStatePath(mode, root);
+      // Determine state path based on session_id
+      let statePath: string;
+      if (sessionId) {
+        validateSessionId(sessionId);
+        ensureSessionStateDir(sessionId, root);
+        statePath = MODE_CONFIGS[mode as ExecutionMode]
+          ? getStateFilePath(root, mode as ExecutionMode, sessionId)
+          : resolveSessionStatePath(mode, sessionId, root);
+      } else {
+        ensureOmcDir('state', root);
+        statePath = getStatePath(mode, root);
+      }
 
       // Build state from explicit params + custom state
       const builtState: Record<string, unknown> = {};
@@ -215,6 +308,7 @@ export const stateWriteTool: ToolDefinition<{
         ...builtState,
         _meta: {
           mode,
+          sessionId: sessionId || null,
           updatedAt: new Date().toISOString(),
           updatedBy: 'state_write_tool'
         }
@@ -222,10 +316,11 @@ export const stateWriteTool: ToolDefinition<{
 
       atomicWriteJsonSync(statePath, stateWithMeta);
 
+      const sessionInfo = sessionId ? ` (session: ${sessionId})` : ' (legacy path)';
       return {
         content: [{
           type: 'text' as const,
-          text: `Successfully wrote state for ${mode}\nPath: ${statePath}\n\n\`\`\`json\n${JSON.stringify(stateWithMeta, null, 2)}\n\`\`\``
+          text: `Successfully wrote state for ${mode}${sessionInfo}\nPath: ${statePath}\n\n\`\`\`json\n${JSON.stringify(stateWithMeta, null, 2)}\n\`\`\``
         }]
       };
     } catch (error) {
@@ -246,51 +341,112 @@ export const stateWriteTool: ToolDefinition<{
 export const stateClearTool: ToolDefinition<{
   mode: z.ZodEnum<typeof STATE_TOOL_MODES>;
   workingDirectory: z.ZodOptional<z.ZodString>;
+  session_id: z.ZodOptional<z.ZodString>;
 }> = {
   name: 'state_clear',
   description: 'Clear/delete state for a specific mode. Removes the state file and any associated marker files.',
   schema: {
     mode: z.enum(STATE_TOOL_MODES).describe('The mode to clear state for'),
     workingDirectory: z.string().optional().describe('Working directory (defaults to cwd)'),
+    session_id: z.string().optional().describe('Optional session ID for session-scoped state isolation. When provided, clears session-specific state. When omitted, clears from all locations (legacy + all sessions).'),
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
 
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id as string | undefined;
 
-      // Use mode registry's clearModeState for known modes
-      if (MODE_CONFIGS[mode as ExecutionMode]) {
-        const success = clearModeState(mode as ExecutionMode, root);
+      // If session_id provided, clear only session-specific state
+      if (sessionId) {
+        validateSessionId(sessionId);
 
-        if (success) {
+        if (MODE_CONFIGS[mode as ExecutionMode]) {
+          const success = clearModeState(mode as ExecutionMode, root, sessionId);
+
+          if (success) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}`
+              }]
+            };
+          } else {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId}`
+              }]
+            };
+          }
+        }
+
+        // Fallback for modes not in registry (e.g., ralplan)
+        const statePath = resolveSessionStatePath(mode, sessionId, root);
+        if (existsSync(statePath)) {
+          unlinkSync(statePath);
           return {
             content: [{
               type: 'text' as const,
-              text: `Successfully cleared state for mode: ${mode}`
+              text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}\nRemoved: ${statePath}`
             }]
           };
         } else {
           return {
             content: [{
               type: 'text' as const,
-              text: `Warning: Some files could not be removed for mode: ${mode}`
+              text: `No state found to clear for mode: ${mode} in session: ${sessionId}`
             }]
           };
         }
       }
 
-      // Fallback for modes not in registry (e.g., ralplan)
-      const statePath = getStatePath(mode, root);
-      if (existsSync(statePath)) {
-        unlinkSync(statePath);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Successfully cleared state for mode: ${mode}\nRemoved: ${statePath}`
-          }]
-        };
+      // No session_id: clear from all locations (legacy + all sessions)
+      let clearedCount = 0;
+      const errors: string[] = [];
+
+      // Clear legacy path
+      if (MODE_CONFIGS[mode as ExecutionMode]) {
+        if (clearModeState(mode as ExecutionMode, root)) {
+          clearedCount++;
+        } else {
+          errors.push('legacy path');
+        }
       } else {
+        const statePath = getStatePath(mode, root);
+        if (existsSync(statePath)) {
+          try {
+            unlinkSync(statePath);
+            clearedCount++;
+          } catch {
+            errors.push('legacy path');
+          }
+        }
+      }
+
+      // Clear all session-scoped state files
+      const sessionIds = listSessionIds(root);
+      for (const sid of sessionIds) {
+        if (MODE_CONFIGS[mode as ExecutionMode]) {
+          if (clearModeState(mode as ExecutionMode, root, sid)) {
+            clearedCount++;
+          } else {
+            errors.push(`session: ${sid}`);
+          }
+        } else {
+          const statePath = resolveSessionStatePath(mode, sid, root);
+          if (existsSync(statePath)) {
+            try {
+              unlinkSync(statePath);
+              clearedCount++;
+            } catch {
+              errors.push(`session: ${sid}`);
+            }
+          }
+        }
+      }
+
+      if (clearedCount === 0 && errors.length === 0) {
         return {
           content: [{
             type: 'text' as const,
@@ -298,6 +454,18 @@ export const stateClearTool: ToolDefinition<{
           }]
         };
       }
+
+      let message = `Cleared state for mode: ${mode}\n- Locations cleared: ${clearedCount}`;
+      if (errors.length > 0) {
+        message += `\n- Errors: ${errors.join(', ')}`;
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: message
+        }]
+      };
     } catch (error) {
       return {
         content: [{
@@ -315,36 +483,114 @@ export const stateClearTool: ToolDefinition<{
 
 export const stateListActiveTool: ToolDefinition<{
   workingDirectory: z.ZodOptional<z.ZodString>;
+  session_id: z.ZodOptional<z.ZodString>;
 }> = {
   name: 'state_list_active',
   description: 'List all currently active modes. Returns which modes have active state files.',
   schema: {
     workingDirectory: z.string().optional().describe('Working directory (defaults to cwd)'),
+    session_id: z.string().optional().describe('Optional session ID for session-scoped state isolation. When provided, shows modes active for that specific session. When omitted, shows all active modes across all sessions.'),
   },
   handler: async (args) => {
-    const { workingDirectory } = args;
+    const { workingDirectory, session_id } = args;
 
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id as string | undefined;
 
-      // Get active modes from registry (8 modes)
-      const activeModes: string[] = [...getActiveModes(root)];
+      // If session_id provided, show modes active for that specific session
+      if (sessionId) {
+        validateSessionId(sessionId);
 
-      // Also check ralplan (not in MODE_CONFIGS but has state file)
+        // Get active modes from registry for this session
+        const activeModes: string[] = [...getActiveModes(root, sessionId)];
+
+        // Also check ralplan for this session
+        try {
+          const ralplanPath = resolveSessionStatePath('ralplan', sessionId, root);
+          if (existsSync(ralplanPath)) {
+            const content = readFileSync(ralplanPath, 'utf-8');
+            const state = JSON.parse(content);
+            if (state.active) {
+              activeModes.push('ralplan');
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+
+        if (activeModes.length === 0) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `## Active Modes (session: ${sessionId})\n\nNo modes are currently active in this session.`
+            }]
+          };
+        }
+
+        const modeList = activeModes.map(mode => `- **${mode}**`).join('\n');
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `## Active Modes (session: ${sessionId}, ${activeModes.length})\n\n${modeList}`
+          }]
+        };
+      }
+
+      // No session_id: show all active modes across all sessions
+      const modeSessionMap = new Map<string, string[]>();
+
+      // Check legacy paths
+      const legacyActiveModes: string[] = [...getActiveModes(root)];
       const ralplanPath = getStatePath('ralplan', root);
       if (existsSync(ralplanPath)) {
         try {
           const content = readFileSync(ralplanPath, 'utf-8');
           const state = JSON.parse(content);
           if (state.active) {
-            activeModes.push('ralplan');
+            legacyActiveModes.push('ralplan');
           }
         } catch {
           // Ignore parse errors
         }
       }
 
-      if (activeModes.length === 0) {
+      for (const mode of legacyActiveModes) {
+        if (!modeSessionMap.has(mode)) {
+          modeSessionMap.set(mode, []);
+        }
+        modeSessionMap.get(mode)!.push('legacy');
+      }
+
+      // Check all sessions
+      const sessionIds = listSessionIds(root);
+      for (const sid of sessionIds) {
+        const sessionActiveModes: string[] = [...getActiveModes(root, sid)];
+
+        // Also check ralplan for this session
+        try {
+          const ralplanSessionPath = resolveSessionStatePath('ralplan', sid, root);
+          if (existsSync(ralplanSessionPath)) {
+            const content = readFileSync(ralplanSessionPath, 'utf-8');
+            const state = JSON.parse(content);
+            if (state.active) {
+              sessionActiveModes.push('ralplan');
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+
+        for (const mode of sessionActiveModes) {
+          if (!modeSessionMap.has(mode)) {
+            modeSessionMap.set(mode, []);
+          }
+          modeSessionMap.get(mode)!.push(sid);
+        }
+      }
+
+      if (modeSessionMap.size === 0) {
         return {
           content: [{
             type: 'text' as const,
@@ -353,12 +599,15 @@ export const stateListActiveTool: ToolDefinition<{
         };
       }
 
-      const modeList = activeModes.map(mode => `- **${mode}**`).join('\n');
+      const lines: string[] = [`## Active Modes (${modeSessionMap.size})\n`];
+      for (const [mode, sessions] of Array.from(modeSessionMap.entries())) {
+        lines.push(`- **${mode}** (${sessions.join(', ')})`);
+      }
 
       return {
         content: [{
           type: 'text' as const,
-          text: `## Active Modes (${activeModes.length})\n\n${modeList}`
+          text: lines.join('\n')
         }]
       };
     } catch (error) {
@@ -379,64 +628,144 @@ export const stateListActiveTool: ToolDefinition<{
 export const stateGetStatusTool: ToolDefinition<{
   mode: z.ZodOptional<z.ZodEnum<typeof STATE_TOOL_MODES>>;
   workingDirectory: z.ZodOptional<z.ZodString>;
+  session_id: z.ZodOptional<z.ZodString>;
 }> = {
   name: 'state_get_status',
   description: 'Get detailed status for a specific mode or all modes. Shows active status, file paths, and state contents.',
   schema: {
     mode: z.enum(STATE_TOOL_MODES).optional().describe('Specific mode to check (omit for all modes)'),
     workingDirectory: z.string().optional().describe('Working directory (defaults to cwd)'),
+    session_id: z.string().optional().describe('Optional session ID for session-scoped state isolation. When provided, includes session info in the status output. When omitted, shows status across all sessions.'),
   },
   handler: async (args) => {
-    const { mode, workingDirectory } = args;
+    const { mode, workingDirectory, session_id } = args;
 
     try {
       const root = validateWorkingDirectory(workingDirectory);
+      const sessionId = session_id as string | undefined;
 
       if (mode) {
         // Single mode status
-        const statePath = getStatePath(mode, root);
-        const active = MODE_CONFIGS[mode as ExecutionMode]
+        const lines: string[] = [`## Status: ${mode}\n`];
+
+        if (sessionId) {
+          // Session-specific status
+          validateSessionId(sessionId);
+          const statePath = MODE_CONFIGS[mode as ExecutionMode]
+            ? getStateFilePath(root, mode as ExecutionMode, sessionId)
+            : resolveSessionStatePath(mode, sessionId, root);
+
+          const active = MODE_CONFIGS[mode as ExecutionMode]
+            ? isModeActive(mode as ExecutionMode, root, sessionId)
+            : existsSync(statePath) && (() => {
+                try {
+                  const content = readFileSync(statePath, 'utf-8');
+                  const state = JSON.parse(content);
+                  return state.active === true;
+                } catch { return false; }
+              })();
+
+          let statePreview = 'No state file';
+          if (existsSync(statePath)) {
+            try {
+              const content = readFileSync(statePath, 'utf-8');
+              const state = JSON.parse(content);
+              statePreview = JSON.stringify(state, null, 2).slice(0, 500);
+              if (statePreview.length >= 500) statePreview += '\n...(truncated)';
+            } catch {
+              statePreview = 'Error reading state file';
+            }
+          }
+
+          lines.push(`### Session: ${sessionId}`);
+          lines.push(`- **Active:** ${active ? 'Yes' : 'No'}`);
+          lines.push(`- **State Path:** ${statePath}`);
+          lines.push(`- **Exists:** ${existsSync(statePath) ? 'Yes' : 'No'}`);
+          lines.push(`\n### State Preview\n\`\`\`json\n${statePreview}\n\`\`\``);
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: lines.join('\n')
+            }]
+          };
+        }
+
+        // No session_id: show all sessions + legacy
+        const legacyPath = getStatePath(mode, root);
+        const legacyActive = MODE_CONFIGS[mode as ExecutionMode]
           ? isModeActive(mode as ExecutionMode, root)
-          : existsSync(statePath) && (() => {
+          : existsSync(legacyPath) && (() => {
               try {
-                const content = readFileSync(statePath, 'utf-8');
+                const content = readFileSync(legacyPath, 'utf-8');
                 const state = JSON.parse(content);
                 return state.active === true;
               } catch { return false; }
             })();
-        let statePreview = 'No state file';
 
-        if (existsSync(statePath)) {
-          try {
-            const content = readFileSync(statePath, 'utf-8');
-            const state = JSON.parse(content);
-            statePreview = JSON.stringify(state, null, 2).slice(0, 500);
-            if (statePreview.length >= 500) statePreview += '\n...(truncated)';
-          } catch {
-            statePreview = 'Error reading state file';
+        lines.push(`### Legacy Path`);
+        lines.push(`- **Active:** ${legacyActive ? 'Yes' : 'No'}`);
+        lines.push(`- **State Path:** ${legacyPath}`);
+        lines.push(`- **Exists:** ${existsSync(legacyPath) ? 'Yes' : 'No'}\n`);
+
+        // Show active sessions for this mode
+        const activeSessions = MODE_CONFIGS[mode as ExecutionMode]
+          ? getActiveSessionsForMode(mode as ExecutionMode, root)
+          : listSessionIds(root).filter(sid => {
+              try {
+                const sessionPath = resolveSessionStatePath(mode, sid, root);
+                if (existsSync(sessionPath)) {
+                  const content = readFileSync(sessionPath, 'utf-8');
+                  const state = JSON.parse(content);
+                  return state.active === true;
+                }
+                return false;
+              } catch {
+                return false;
+              }
+            });
+
+        if (activeSessions.length > 0) {
+          lines.push(`### Active Sessions (${activeSessions.length})`);
+          for (const sid of activeSessions) {
+            lines.push(`- ${sid}`);
           }
+        } else {
+          lines.push(`### Active Sessions\nNo active sessions for this mode.`);
         }
 
         return {
           content: [{
             type: 'text' as const,
-            text: `## Status: ${mode}\n\n- **Active:** ${active ? 'Yes' : 'No'}\n- **State Path:** ${statePath}\n- **Exists:** ${existsSync(statePath) ? 'Yes' : 'No'}\n\n### State Preview\n\`\`\`json\n${statePreview}\n\`\`\``
+            text: lines.join('\n')
           }]
         };
       }
 
       // All modes status
-      const statuses = getAllModeStatuses(root);
-      const lines = ['## All Mode Statuses\n'];
+      const statuses = getAllModeStatuses(root, sessionId);
+      const lines = sessionId
+        ? [`## All Mode Statuses (session: ${sessionId})\n`]
+        : ['## All Mode Statuses\n'];
 
       for (const status of statuses) {
         const icon = status.active ? '[ACTIVE]' : '[INACTIVE]';
         lines.push(`${icon} **${status.mode}**: ${status.active ? 'Active' : 'Inactive'}`);
         lines.push(`   Path: \`${status.stateFilePath}\``);
+
+        // Show active sessions if no specific session_id
+        if (!sessionId && MODE_CONFIGS[status.mode]) {
+          const activeSessions = getActiveSessionsForMode(status.mode, root);
+          if (activeSessions.length > 0) {
+            lines.push(`   Active sessions: ${activeSessions.join(', ')}`);
+          }
+        }
       }
 
       // Also check ralplan (not in MODE_CONFIGS)
-      const ralplanPath = getStatePath('ralplan', root);
+      const ralplanPath = sessionId
+        ? resolveSessionStatePath('ralplan', sessionId, root)
+        : getStatePath('ralplan', root);
       let ralplanActive = false;
       if (existsSync(ralplanPath)) {
         try {

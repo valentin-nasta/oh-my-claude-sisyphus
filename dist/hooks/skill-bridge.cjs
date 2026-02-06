@@ -44,6 +44,7 @@ var import_path = require("path");
 var OmcPaths = {
   ROOT: ".omc",
   STATE: ".omc/state",
+  SESSIONS: ".omc/state/sessions",
   PLANS: ".omc/plans",
   RESEARCH: ".omc/research",
   NOTEPAD: ".omc/notepad.md",

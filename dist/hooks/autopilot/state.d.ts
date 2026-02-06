@@ -14,19 +14,19 @@ export declare function ensureAutopilotDir(directory: string): string;
 /**
  * Read autopilot state from disk
  */
-export declare function readAutopilotState(directory: string): AutopilotState | null;
+export declare function readAutopilotState(directory: string, sessionId?: string): AutopilotState | null;
 /**
  * Write autopilot state to disk
  */
-export declare function writeAutopilotState(directory: string, state: AutopilotState): boolean;
+export declare function writeAutopilotState(directory: string, state: AutopilotState, sessionId?: string): boolean;
 /**
  * Clear autopilot state
  */
-export declare function clearAutopilotState(directory: string): boolean;
+export declare function clearAutopilotState(directory: string, sessionId?: string): boolean;
 /**
  * Check if autopilot is active
  */
-export declare function isAutopilotActive(directory: string): boolean;
+export declare function isAutopilotActive(directory: string, sessionId?: string): boolean;
 /**
  * Initialize a new autopilot session
  */
@@ -34,31 +34,31 @@ export declare function initAutopilot(directory: string, idea: string, sessionId
 /**
  * Transition to a new phase
  */
-export declare function transitionPhase(directory: string, newPhase: AutopilotPhase): AutopilotState | null;
+export declare function transitionPhase(directory: string, newPhase: AutopilotPhase, sessionId?: string): AutopilotState | null;
 /**
  * Increment the agent spawn counter
  */
-export declare function incrementAgentCount(directory: string, count?: number): boolean;
+export declare function incrementAgentCount(directory: string, count?: number, sessionId?: string): boolean;
 /**
  * Update expansion phase data
  */
-export declare function updateExpansion(directory: string, updates: Partial<AutopilotState['expansion']>): boolean;
+export declare function updateExpansion(directory: string, updates: Partial<AutopilotState['expansion']>, sessionId?: string): boolean;
 /**
  * Update planning phase data
  */
-export declare function updatePlanning(directory: string, updates: Partial<AutopilotState['planning']>): boolean;
+export declare function updatePlanning(directory: string, updates: Partial<AutopilotState['planning']>, sessionId?: string): boolean;
 /**
  * Update execution phase data
  */
-export declare function updateExecution(directory: string, updates: Partial<AutopilotState['execution']>): boolean;
+export declare function updateExecution(directory: string, updates: Partial<AutopilotState['execution']>, sessionId?: string): boolean;
 /**
  * Update QA phase data
  */
-export declare function updateQA(directory: string, updates: Partial<AutopilotState['qa']>): boolean;
+export declare function updateQA(directory: string, updates: Partial<AutopilotState['qa']>, sessionId?: string): boolean;
 /**
  * Update validation phase data
  */
-export declare function updateValidation(directory: string, updates: Partial<AutopilotState['validation']>): boolean;
+export declare function updateValidation(directory: string, updates: Partial<AutopilotState['validation']>, sessionId?: string): boolean;
 /**
  * Get the spec file path
  */

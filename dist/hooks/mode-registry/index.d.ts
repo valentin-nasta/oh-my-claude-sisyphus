@@ -36,7 +36,7 @@ export declare function ensureStateDir(cwd: string): void;
 /**
  * Get the full path to a mode's state file
  */
-export declare function getStateFilePath(cwd: string, mode: ExecutionMode): string;
+export declare function getStateFilePath(cwd: string, mode: ExecutionMode, sessionId?: string): string;
 /**
  * Get the full path to a mode's marker file
  */
@@ -52,9 +52,10 @@ export declare function getGlobalStateFilePath(mode: ExecutionMode): string | nu
  *
  * @param mode - The mode to check
  * @param cwd - Working directory
+ * @param sessionId - Optional session ID to check session-scoped state
  * @returns true if the mode is active
  */
-export declare function isModeActive(mode: ExecutionMode, cwd: string): boolean;
+export declare function isModeActive(mode: ExecutionMode, cwd: string, sessionId?: string): boolean;
 /**
  * Check if a mode has active state (file exists)
  */
@@ -62,7 +63,7 @@ export declare function hasModeState(cwd: string, mode: ExecutionMode): boolean;
 /**
  * Get all modes that currently have state files
  */
-export declare function getActiveModes(cwd: string): ExecutionMode[];
+export declare function getActiveModes(cwd: string, sessionId?: string): ExecutionMode[];
 /**
  * Check if any OMC mode is currently active
  *
@@ -89,24 +90,52 @@ export declare function canStartMode(mode: ExecutionMode, cwd: string): CanStart
  * Get status of all modes
  *
  * @param cwd - Working directory
+ * @param sessionId - Optional session ID to check session-scoped state
  * @returns Array of mode statuses
  */
-export declare function getAllModeStatuses(cwd: string): ModeStatus[];
+export declare function getAllModeStatuses(cwd: string, sessionId?: string): ModeStatus[];
 /**
  * Clear all state files for a mode
  *
  * Deletes:
  * - Local state file (.omc/state/{mode}-state.json)
+ * - Session-scoped state file if sessionId provided
  * - Local marker file if applicable
  * - Global state file if applicable (~/.claude/{mode}-state.json)
  *
  * @returns true if all files were deleted successfully (or didn't exist)
  */
-export declare function clearModeState(mode: ExecutionMode, cwd: string): boolean;
+export declare function clearModeState(mode: ExecutionMode, cwd: string, sessionId?: string): boolean;
 /**
  * Clear all mode states (force clear)
  */
 export declare function clearAllModeStates(cwd: string): boolean;
+/**
+ * Check if a mode is active in any session
+ *
+ * @param mode - The mode to check
+ * @param cwd - Working directory
+ * @returns true if the mode is active in any session or legacy path
+ */
+export declare function isModeActiveInAnySession(mode: ExecutionMode, cwd: string): boolean;
+/**
+ * Get all session IDs that have a specific mode active
+ *
+ * @param mode - The mode to check
+ * @param cwd - Working directory
+ * @returns Array of session IDs with this mode active
+ */
+export declare function getActiveSessionsForMode(mode: ExecutionMode, cwd: string): string[];
+/**
+ * Clear stale session directories
+ *
+ * Removes session directories that are either empty or have no recent activity.
+ *
+ * @param cwd - Working directory
+ * @param maxAgeMs - Maximum age in milliseconds (default: 24 hours)
+ * @returns Array of removed session IDs
+ */
+export declare function clearStaleSessionDirs(cwd: string, maxAgeMs?: number): string[];
 /**
  * Create a marker file to indicate a mode is active
  *

@@ -7,19 +7,27 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { readRalphState } from '../ralph/index.js';
+import { resolveSessionStatePath, ensureSessionStateDir } from '../../lib/worktree-paths.js';
 const DEFAULT_MAX_CYCLES = 5;
 const SAME_FAILURE_THRESHOLD = 3;
 /**
  * Get the state file path for UltraQA
  */
-function getStateFilePath(directory) {
+function getStateFilePath(directory, sessionId) {
+    if (sessionId) {
+        return resolveSessionStatePath('ultraqa', sessionId, directory);
+    }
     const omcDir = join(directory, '.omc');
     return join(omcDir, 'state', 'ultraqa-state.json');
 }
 /**
  * Ensure the .omc/state directory exists
  */
-function ensureStateDir(directory) {
+function ensureStateDir(directory, sessionId) {
+    if (sessionId) {
+        ensureSessionStateDir(sessionId, directory);
+        return;
+    }
     const stateDir = join(directory, '.omc', 'state');
     if (!existsSync(stateDir)) {
         mkdirSync(stateDir, { recursive: true });
@@ -28,7 +36,21 @@ function ensureStateDir(directory) {
 /**
  * Read UltraQA state from disk
  */
-export function readUltraQAState(directory) {
+export function readUltraQAState(directory, sessionId) {
+    // Try session-scoped path first
+    if (sessionId) {
+        const sessionFile = getStateFilePath(directory, sessionId);
+        if (existsSync(sessionFile)) {
+            try {
+                const content = readFileSync(sessionFile, 'utf-8');
+                return JSON.parse(content);
+            }
+            catch {
+                // Fall through to legacy path
+            }
+        }
+    }
+    // Fallback to legacy path
     const stateFile = getStateFilePath(directory);
     if (!existsSync(stateFile)) {
         return null;
@@ -44,10 +66,10 @@ export function readUltraQAState(directory) {
 /**
  * Write UltraQA state to disk
  */
-export function writeUltraQAState(directory, state) {
+export function writeUltraQAState(directory, state, sessionId) {
     try {
-        ensureStateDir(directory);
-        const stateFile = getStateFilePath(directory);
+        ensureStateDir(directory, sessionId);
+        const stateFile = getStateFilePath(directory, sessionId);
         writeFileSync(stateFile, JSON.stringify(state, null, 2));
         return true;
     }
@@ -58,8 +80,8 @@ export function writeUltraQAState(directory, state) {
 /**
  * Clear UltraQA state
  */
-export function clearUltraQAState(directory) {
-    const stateFile = getStateFilePath(directory);
+export function clearUltraQAState(directory, sessionId) {
+    const stateFile = getStateFilePath(directory, sessionId);
     if (!existsSync(stateFile)) {
         return true;
     }
@@ -74,8 +96,8 @@ export function clearUltraQAState(directory) {
 /**
  * Check if Ralph Loop is active (mutual exclusion check)
  */
-export function isRalphLoopActive(directory) {
-    const ralphState = readRalphState(directory);
+export function isRalphLoopActive(directory, sessionId) {
+    const ralphState = readRalphState(directory, sessionId);
     return ralphState !== null && ralphState.active === true;
 }
 /**
@@ -101,14 +123,14 @@ export function startUltraQA(directory, goalType, sessionId, options) {
         session_id: sessionId,
         project_path: directory
     };
-    const written = writeUltraQAState(directory, state);
+    const written = writeUltraQAState(directory, state, sessionId);
     return { success: written };
 }
 /**
  * Record a failure and increment cycle
  */
-export function recordFailure(directory, failureDescription) {
-    const state = readUltraQAState(directory);
+export function recordFailure(directory, failureDescription, sessionId) {
+    const state = readUltraQAState(directory, sessionId);
     if (!state || !state.active) {
         return { state: null, shouldExit: true, reason: 'not_active' };
     }
@@ -136,14 +158,14 @@ export function recordFailure(directory, failureDescription) {
             reason: `Max cycles (${state.max_cycles}) reached`
         };
     }
-    writeUltraQAState(directory, state);
+    writeUltraQAState(directory, state, sessionId);
     return { state, shouldExit: false };
 }
 /**
  * Mark UltraQA as successful
  */
-export function completeUltraQA(directory) {
-    const state = readUltraQAState(directory);
+export function completeUltraQA(directory, sessionId) {
+    const state = readUltraQAState(directory, sessionId);
     if (!state) {
         return null;
     }
@@ -152,14 +174,14 @@ export function completeUltraQA(directory) {
         cycles: state.cycle,
         reason: 'goal_met'
     };
-    clearUltraQAState(directory);
+    clearUltraQAState(directory, sessionId);
     return result;
 }
 /**
  * Stop UltraQA with failure
  */
-export function stopUltraQA(directory, reason, diagnosis) {
-    const state = readUltraQAState(directory);
+export function stopUltraQA(directory, reason, diagnosis, sessionId) {
+    const state = readUltraQAState(directory, sessionId);
     if (!state) {
         return null;
     }
@@ -169,14 +191,14 @@ export function stopUltraQA(directory, reason, diagnosis) {
         reason,
         diagnosis
     };
-    clearUltraQAState(directory);
+    clearUltraQAState(directory, sessionId);
     return result;
 }
 /**
  * Cancel UltraQA
  */
-export function cancelUltraQA(directory) {
-    return clearUltraQAState(directory);
+export function cancelUltraQA(directory, sessionId) {
+    return clearUltraQAState(directory, sessionId);
 }
 /**
  * Normalize failure description for comparison

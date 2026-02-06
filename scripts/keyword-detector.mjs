@@ -104,7 +104,16 @@ function activateState(directory, prompt, stateName, sessionId) {
     last_checked_at: new Date().toISOString()
   };
 
-  // Write to local .omc/state directory
+  // Write to session-scoped path if sessionId available
+  if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+    const sessionDir = join(directory, '.omc', 'state', 'sessions', sessionId);
+    if (!existsSync(sessionDir)) {
+      try { mkdirSync(sessionDir, { recursive: true }); } catch {}
+    }
+    try { writeFileSync(join(sessionDir, `${stateName}-state.json`), JSON.stringify(state, null, 2), { mode: 0o600 }); } catch {}
+  }
+
+  // Also write to legacy local .omc/state directory (backward compat)
   const localDir = join(directory, '.omc', 'state');
   if (!existsSync(localDir)) {
     try { mkdirSync(localDir, { recursive: true }); } catch {}
@@ -122,12 +131,17 @@ function activateState(directory, prompt, stateName, sessionId) {
 /**
  * Clear state files for cancel operation
  */
-function clearStateFiles(directory, modeNames) {
+function clearStateFiles(directory, modeNames, sessionId) {
   for (const name of modeNames) {
     const localPath = join(directory, '.omc', 'state', `${name}-state.json`);
     const globalPath = join(homedir(), '.omc', 'state', `${name}-state.json`);
     try { if (existsSync(localPath)) unlinkSync(localPath); } catch {}
     try { if (existsSync(globalPath)) unlinkSync(globalPath); } catch {}
+    // Clear session-scoped file too
+    if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+      const sessionPath = join(directory, '.omc', 'state', 'sessions', sessionId, `${name}-state.json`);
+      try { if (existsSync(sessionPath)) unlinkSync(sessionPath); } catch {}
+    }
   }
 }
 
@@ -419,7 +433,7 @@ async function main() {
 
     // Handle cancel specially - clear states and emit
     if (resolved.length > 0 && resolved[0].name === 'cancel') {
-      clearStateFiles(directory, ['ralph', 'autopilot', 'ultrapilot', 'ultrawork', 'ecomode', 'swarm', 'pipeline']);
+      clearStateFiles(directory, ['ralph', 'autopilot', 'ultrapilot', 'ultrawork', 'ecomode', 'swarm', 'pipeline'], sessionId);
       console.log(JSON.stringify(createHookOutput(createSkillInvocation('cancel', prompt))));
       return;
     }

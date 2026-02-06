@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { resolveSessionStatePath, ensureSessionStateDir } from '../../lib/worktree-paths.js';
 
 export interface UltraworkState {
   /** Whether ultrawork mode is currently active */
@@ -39,8 +40,11 @@ const _DEFAULT_STATE: UltraworkState = {
 /**
  * Get the state file path for Ultrawork
  */
-function getStateFilePath(directory?: string): string {
+function getStateFilePath(directory?: string, sessionId?: string): string {
   const baseDir = directory || process.cwd();
+  if (sessionId) {
+    return resolveSessionStatePath('ultrawork', sessionId, baseDir);
+  }
   const omcDir = join(baseDir, '.omc');
   return join(omcDir, 'state', 'ultrawork-state.json');
 }
@@ -49,7 +53,11 @@ function getStateFilePath(directory?: string): string {
 /**
  * Ensure the .omc/state directory exists
  */
-function ensureStateDir(directory?: string): void {
+function ensureStateDir(directory?: string, sessionId?: string): void {
+  if (sessionId) {
+    ensureSessionStateDir(sessionId, directory || process.cwd());
+    return;
+  }
   const baseDir = directory || process.cwd();
   const omcDir = join(baseDir, '.omc', 'state');
   if (!existsSync(omcDir)) {
@@ -61,7 +69,22 @@ function ensureStateDir(directory?: string): void {
 /**
  * Read Ultrawork state from disk (local only)
  */
-export function readUltraworkState(directory?: string): UltraworkState | null {
+export function readUltraworkState(directory?: string, sessionId?: string): UltraworkState | null {
+  // Try session-scoped path first
+  if (sessionId) {
+    const sessionFile = getStateFilePath(directory, sessionId);
+    if (existsSync(sessionFile)) {
+      try {
+        const content = readFileSync(sessionFile, 'utf-8');
+        return JSON.parse(content);
+      } catch (error) {
+        console.error('[ultrawork] Failed to read session state file:', error);
+        // Fall through to legacy path
+      }
+    }
+  }
+
+  // Fallback to legacy path
   const localStateFile = getStateFilePath(directory);
   if (existsSync(localStateFile)) {
     try {
@@ -79,10 +102,10 @@ export function readUltraworkState(directory?: string): UltraworkState | null {
 /**
  * Write Ultrawork state to disk (local only)
  */
-export function writeUltraworkState(state: UltraworkState, directory?: string): boolean {
+export function writeUltraworkState(state: UltraworkState, directory?: string, sessionId?: string): boolean {
   try {
-    ensureStateDir(directory);
-    const localStateFile = getStateFilePath(directory);
+    ensureStateDir(directory, sessionId);
+    const localStateFile = getStateFilePath(directory, sessionId);
     writeFileSync(localStateFile, JSON.stringify(state, null, 2), { mode: 0o600 });
     return true;
   } catch {
@@ -110,14 +133,14 @@ export function activateUltrawork(
     linked_to_ralph: linkedToRalph
   };
 
-  return writeUltraworkState(state, directory);
+  return writeUltraworkState(state, directory, sessionId);
 }
 
 /**
  * Deactivate ultrawork mode
  */
-export function deactivateUltrawork(directory?: string): boolean {
-  const localStateFile = getStateFilePath(directory);
+export function deactivateUltrawork(directory?: string, sessionId?: string): boolean {
+  const localStateFile = getStateFilePath(directory, sessionId);
   if (existsSync(localStateFile)) {
     try {
       unlinkSync(localStateFile);
@@ -133,8 +156,8 @@ export function deactivateUltrawork(directory?: string): boolean {
 /**
  * Increment reinforcement count (called when mode is reinforced on stop)
  */
-export function incrementReinforcement(directory?: string): UltraworkState | null {
-  const state = readUltraworkState(directory);
+export function incrementReinforcement(directory?: string, sessionId?: string): UltraworkState | null {
+  const state = readUltraworkState(directory, sessionId);
 
   if (!state || !state.active) {
     return null;
@@ -143,7 +166,7 @@ export function incrementReinforcement(directory?: string): UltraworkState | nul
   state.reinforcement_count += 1;
   state.last_checked_at = new Date().toISOString();
 
-  if (writeUltraworkState(state, directory)) {
+  if (writeUltraworkState(state, directory, sessionId)) {
     return state;
   }
 
@@ -157,7 +180,7 @@ export function shouldReinforceUltrawork(
   sessionId?: string,
   directory?: string
 ): boolean {
-  const state = readUltraworkState(directory);
+  const state = readUltraworkState(directory, sessionId);
 
   if (!state || !state.active) {
     return false;
@@ -208,10 +231,10 @@ export function createUltraworkStateHook(directory: string) {
   return {
     activate: (prompt: string, sessionId?: string) =>
       activateUltrawork(prompt, sessionId, directory),
-    deactivate: () => deactivateUltrawork(directory),
-    getState: () => readUltraworkState(directory),
+    deactivate: (sessionId?: string) => deactivateUltrawork(directory, sessionId),
+    getState: (sessionId?: string) => readUltraworkState(directory, sessionId),
     shouldReinforce: (sessionId?: string) =>
       shouldReinforceUltrawork(sessionId, directory),
-    incrementReinforcement: () => incrementReinforcement(directory)
+    incrementReinforcement: (sessionId?: string) => incrementReinforcement(directory, sessionId)
   };
 }
