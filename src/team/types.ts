@@ -18,6 +18,16 @@ export interface BridgeConfig {
   maxConsecutiveErrors: number;  // default: 3 — self-quarantine threshold
   outboxMaxLines: number;       // default: 500 — rotation trigger
   maxRetries?: number;          // default: 5 — max task retry attempts
+  permissionEnforcement?: 'off' | 'audit' | 'enforce'; // default: 'off'
+  permissions?: BridgeWorkerPermissions;
+}
+
+/** Permission scoping embedded in BridgeConfig (mirrors WorkerPermissions shape) */
+export interface BridgeWorkerPermissions {
+  allowedPaths: string[];   // glob patterns relative to workingDirectory
+  deniedPaths: string[];    // glob patterns that override allowed
+  allowedCommands: string[]; // command prefixes (e.g., 'npm test', 'tsc')
+  maxFileSize: number;      // max bytes per file write
 }
 
 /** Mirrors the JSON structure of ~/.claude/tasks/{team}/{id}.json */

@@ -22,6 +22,8 @@ import { writeHeartbeat, deleteHeartbeat } from './heartbeat.js';
 import { killSession } from './tmux-session.js';
 import { logAuditEvent } from './audit-log.js';
 import type { AuditEvent } from './audit-log.js';
+import { getEffectivePermissions, findPermissionViolations, getDefaultPermissions } from './permissions.js';
+import type { WorkerPermissions, PermissionViolation } from './permissions.js';
 
 /** Simple logger */
 function log(message: string): void {
@@ -46,6 +48,71 @@ function audit(config: BridgeConfig, eventType: AuditEvent['eventType'], taskId?
 /** Sleep helper */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Capture a snapshot of tracked/modified/untracked files in the working directory.
+ * Uses `git status --porcelain` + `git ls-files --others --exclude-standard`.
+ * Returns a Set of relative file paths that currently exist or are modified.
+ */
+function captureFileSnapshot(cwd: string): Set<string> {
+  const { execSync } = require('child_process') as typeof import('child_process');
+  const files = new Set<string>();
+  try {
+    // Get all tracked files that are modified, added, or staged
+    const statusOutput = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 10000 });
+    for (const line of statusOutput.split('\n')) {
+      if (!line.trim()) continue;
+      // Format: "XY filename" or "XY filename -> newname"
+      const filePart = line.slice(3);
+      const arrowIdx = filePart.indexOf(' -> ');
+      const fileName = arrowIdx !== -1 ? filePart.slice(arrowIdx + 4) : filePart;
+      files.add(fileName.trim());
+    }
+
+    // Get untracked files
+    const untrackedOutput = execSync('git ls-files --others --exclude-standard', { cwd, encoding: 'utf-8', timeout: 10000 });
+    for (const line of untrackedOutput.split('\n')) {
+      if (line.trim()) files.add(line.trim());
+    }
+  } catch {
+    // If git commands fail, return empty set (no snapshot = no enforcement possible)
+  }
+  return files;
+}
+
+/**
+ * Diff two file snapshots to find newly changed/created files.
+ * Returns paths that are in `after` but not in `before` (new or newly modified files).
+ */
+function diffSnapshots(before: Set<string>, after: Set<string>): string[] {
+  const changed: string[] = [];
+  for (const path of after) {
+    if (!before.has(path)) {
+      changed.push(path);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Build effective WorkerPermissions from BridgeConfig.
+ * Merges config.permissions with secure deny-defaults.
+ */
+function buildEffectivePermissions(config: BridgeConfig): WorkerPermissions {
+  if (config.permissions) {
+    return getEffectivePermissions({
+      workerName: config.workerName,
+      allowedPaths: config.permissions.allowedPaths || [],
+      deniedPaths: config.permissions.deniedPaths || [],
+      allowedCommands: config.permissions.allowedCommands || [],
+      maxFileSize: config.permissions.maxFileSize ?? Infinity,
+    });
+  }
+  // No explicit permissions — still apply secure deny-defaults
+  return getEffectivePermissions({
+    workerName: config.workerName,
+  });
 }
 
 /** Maximum stdout/stderr buffer size (10MB) */
@@ -494,8 +561,15 @@ export async function runBridge(config: BridgeConfig): Promise<void> {
 
         log(`[bridge] Executing task ${task.id}: ${task.subject}`);
 
-        // --- 8. Execute CLI ---
+        // --- 8. Execute CLI (with permission enforcement) ---
         try {
+          // 8a. Capture pre-execution file snapshot (for permission enforcement)
+          const enforcementMode = config.permissionEnforcement || 'off';
+          let preSnapshot: Set<string> | null = null;
+          if (enforcementMode !== 'off') {
+            preSnapshot = captureFileSnapshot(workingDirectory);
+          }
+
           const { child, result } = spawnCliProcess(
             provider, prompt, config.model, workingDirectory, config.taskTimeoutMs
           );
@@ -508,21 +582,92 @@ export async function runBridge(config: BridgeConfig): Promise<void> {
           // Write response to output file
           writeFileWithMode(outputFile, response);
 
-          // --- 9. Mark complete ---
-          updateTask(teamName, task.id, { status: 'completed' });
-          audit(config, 'task_completed', task.id);
-          consecutiveErrors = 0;
+          // 8b. Post-execution permission check
+          let violations: PermissionViolation[] = [];
+          if (enforcementMode !== 'off' && preSnapshot) {
+            const postSnapshot = captureFileSnapshot(workingDirectory);
+            const changedPaths = diffSnapshots(preSnapshot, postSnapshot);
 
-          // --- 10. Report to lead ---
-          const summary = readOutputSummary(outputFile);
-          appendOutbox(teamName, workerName, {
-            type: 'task_complete',
-            taskId: task.id,
-            summary,
-            timestamp: new Date().toISOString()
-          });
+            if (changedPaths.length > 0) {
+              const effectivePerms = buildEffectivePermissions(config);
+              violations = findPermissionViolations(changedPaths, effectivePerms, workingDirectory);
+            }
+          }
 
-          log(`[bridge] Task ${task.id} completed`);
+          // 8c. Handle violations
+          if (violations.length > 0) {
+            const violationSummary = violations
+              .map(v => `  - ${v.path}: ${v.reason}`)
+              .join('\n');
+
+            if (enforcementMode === 'enforce') {
+              // ENFORCE: fail the task, audit, report error
+              audit(config, 'permission_violation', task.id, {
+                violations: violations.map(v => ({ path: v.path, reason: v.reason })),
+                mode: 'enforce',
+              });
+
+              updateTask(teamName, task.id, {
+                status: 'completed',
+                metadata: {
+                  ...(task.metadata || {}),
+                  error: `Permission violations detected (enforce mode)`,
+                  permissionViolations: violations,
+                  permanentlyFailed: true,
+                },
+              });
+
+              appendOutbox(teamName, workerName, {
+                type: 'error',
+                taskId: task.id,
+                error: `Permission violation (enforce mode):\n${violationSummary}`,
+                timestamp: new Date().toISOString(),
+              });
+
+              log(`[bridge] Task ${task.id} failed: permission violations (enforce mode)`);
+              consecutiveErrors = 0; // Not a CLI error, don't count toward quarantine
+              // Skip normal completion flow
+            } else {
+              // AUDIT: log warning but allow task to succeed
+              audit(config, 'permission_audit', task.id, {
+                violations: violations.map(v => ({ path: v.path, reason: v.reason })),
+                mode: 'audit',
+              });
+
+              log(`[bridge] Permission audit warning for task ${task.id}:\n${violationSummary}`);
+
+              // Continue with normal completion
+              updateTask(teamName, task.id, { status: 'completed' });
+              audit(config, 'task_completed', task.id);
+              consecutiveErrors = 0;
+
+              const summary = readOutputSummary(outputFile);
+              appendOutbox(teamName, workerName, {
+                type: 'task_complete',
+                taskId: task.id,
+                summary: `${summary}\n[AUDIT WARNING: ${violations.length} permission violation(s) detected]`,
+                timestamp: new Date().toISOString(),
+              });
+
+              log(`[bridge] Task ${task.id} completed (with ${violations.length} audit warning(s))`);
+            }
+          } else {
+            // --- 9. Mark complete (no violations) ---
+            updateTask(teamName, task.id, { status: 'completed' });
+            audit(config, 'task_completed', task.id);
+            consecutiveErrors = 0;
+
+            // --- 10. Report to lead ---
+            const summary = readOutputSummary(outputFile);
+            appendOutbox(teamName, workerName, {
+              type: 'task_complete',
+              taskId: task.id,
+              summary,
+              timestamp: new Date().toISOString()
+            });
+
+            log(`[bridge] Task ${task.id} completed`);
+          }
         } catch (err) {
           activeChild = null;
           consecutiveErrors++;

@@ -128,12 +128,48 @@ function main(): void {
     process.exit(1);
   }
 
+  // Validate permission enforcement config
+  if (config.permissionEnforcement) {
+    const validModes = ['off', 'audit', 'enforce'];
+    if (!validModes.includes(config.permissionEnforcement)) {
+      console.error(`Invalid permissionEnforcement: ${config.permissionEnforcement}. Must be 'off', 'audit', or 'enforce'.`);
+      process.exit(1);
+    }
+
+    // Validate permissions shape when enforcement is active
+    if (config.permissionEnforcement !== 'off' && config.permissions) {
+      const p = config.permissions;
+      if (p.allowedPaths && !Array.isArray(p.allowedPaths)) {
+        console.error('permissions.allowedPaths must be an array of strings');
+        process.exit(1);
+      }
+      if (p.deniedPaths && !Array.isArray(p.deniedPaths)) {
+        console.error('permissions.deniedPaths must be an array of strings');
+        process.exit(1);
+      }
+      if (p.allowedCommands && !Array.isArray(p.allowedCommands)) {
+        console.error('permissions.allowedCommands must be an array of strings');
+        process.exit(1);
+      }
+
+      // Reject dangerous patterns that could defeat the deny-defaults
+      const dangerousPatterns = ['**', '*', '!.git/**', '!.env*', '!**/.env*'];
+      for (const pattern of (p.allowedPaths || [])) {
+        if (dangerousPatterns.includes(pattern)) {
+          console.error(`Dangerous allowedPaths pattern rejected: "${pattern}"`);
+          process.exit(1);
+        }
+      }
+    }
+  }
+
   // Apply defaults
   config.pollIntervalMs = config.pollIntervalMs || 3000;
   config.taskTimeoutMs = config.taskTimeoutMs || 600_000;
   config.maxConsecutiveErrors = config.maxConsecutiveErrors || 3;
   config.outboxMaxLines = config.outboxMaxLines || 500;
   config.maxRetries = config.maxRetries || 5;
+  config.permissionEnforcement = config.permissionEnforcement || 'off';
 
   // Signal handlers for graceful cleanup on external termination
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {

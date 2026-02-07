@@ -194,3 +194,83 @@ export function getDefaultPermissions(workerName: string): WorkerPermissions {
     maxFileSize: Infinity,
   };
 }
+
+/**
+ * Secure deny-defaults that are always enforced regardless of caller config.
+ * These protect sensitive files from being modified by any worker.
+ */
+const SECURE_DENY_DEFAULTS: string[] = [
+  '.git/**',
+  '.env*',
+  '**/.env*',
+  '**/secrets/**',
+  '**/.ssh/**',
+  '**/node_modules/.cache/**',
+];
+
+/**
+ * Merge caller-provided permissions with secure deny-defaults.
+ * The deny-defaults are always prepended to deniedPaths so they cannot be overridden.
+ */
+export function getEffectivePermissions(base?: Partial<WorkerPermissions> & { workerName: string }): WorkerPermissions {
+  const perms = base
+    ? { ...getDefaultPermissions(base.workerName), ...base }
+    : getDefaultPermissions('default');
+
+  // Prepend secure defaults (deduplicating against existing deniedPaths)
+  const existingSet = new Set(perms.deniedPaths);
+  const merged = [
+    ...SECURE_DENY_DEFAULTS.filter(p => !existingSet.has(p)),
+    ...perms.deniedPaths,
+  ];
+  perms.deniedPaths = merged;
+
+  return perms;
+}
+
+/** A single permission violation */
+export interface PermissionViolation {
+  path: string;
+  reason: string;
+}
+
+/**
+ * Check a list of changed file paths against permissions.
+ * Returns an array of violations (empty = all paths allowed).
+ *
+ * @param changedPaths - relative or absolute paths of files that were modified
+ * @param permissions - effective permissions to check against
+ * @param cwd - working directory for resolving relative paths
+ */
+export function findPermissionViolations(
+  changedPaths: string[],
+  permissions: WorkerPermissions,
+  cwd: string
+): PermissionViolation[] {
+  const violations: PermissionViolation[] = [];
+
+  for (const filePath of changedPaths) {
+    if (!isPathAllowed(permissions, filePath, cwd)) {
+      // Determine which deny pattern matched for the reason
+      const absPath = resolve(cwd, filePath);
+      const relPath = relative(cwd, absPath);
+
+      let reason: string;
+      if (relPath.startsWith('..')) {
+        reason = `Path escapes working directory: ${relPath}`;
+      } else {
+        // Find which deny pattern matched
+        const matchedDeny = permissions.deniedPaths.find(p => matchGlob(p, relPath));
+        if (matchedDeny) {
+          reason = `Matches denied pattern: ${matchedDeny}`;
+        } else {
+          reason = `Not in allowed paths: ${permissions.allowedPaths.join(', ') || '(none configured)'}`;
+        }
+      }
+
+      violations.push({ path: relPath, reason });
+    }
+  }
+
+  return violations;
+}

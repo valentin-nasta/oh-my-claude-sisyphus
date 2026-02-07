@@ -37,6 +37,8 @@ const CATEGORY_MAP: Record<AuditEventType, ActivityEntry['category']> = {
   cli_error: 'error',
   shutdown_received: 'lifecycle',
   shutdown_ack: 'lifecycle',
+  permission_violation: 'error',
+  permission_audit: 'task',
 };
 
 /** Map audit event types to human-readable action descriptions */
@@ -58,6 +60,8 @@ function describeEvent(event: AuditEvent): string {
     case 'cli_error': return `CLI process error`;
     case 'shutdown_received': return 'Received shutdown signal';
     case 'shutdown_ack': return 'Acknowledged shutdown';
+    case 'permission_violation': return `Permission violation on task ${event.taskId || '(unknown)'}`;
+    case 'permission_audit': return `Permission audit warning on task ${event.taskId || '(unknown)'}`;
     default: return event.eventType;
   }
 }

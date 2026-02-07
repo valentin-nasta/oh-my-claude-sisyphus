@@ -27,7 +27,9 @@ export type AuditEventType =
   | 'cli_timeout'
   | 'cli_error'
   | 'shutdown_received'
-  | 'shutdown_ack';
+  | 'shutdown_ack'
+  | 'permission_violation'
+  | 'permission_audit';
 
 export interface AuditEvent {
   timestamp: string;
