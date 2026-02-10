@@ -419,8 +419,6 @@ function parseUsageResponse(response) {
         result.sonnetWeeklyPercent = clamp(sonnetSevenDay);
         result.sonnetWeeklyResetsAt = parseDate(sonnetResetsAt);
     }
-    // If API doesn't return per-model data, sonnetWeeklyPercent remains undefined
-    // This is more accurate than estimating with arbitrary percentages
     return result;
 }
 /**
@@ -448,11 +446,11 @@ function parseZaiResponse(response) {
     };
     return {
         fiveHourPercent: clamp(tokensLimit?.percentage),
-        weeklyPercent: 0,
         fiveHourResetsAt: parseResetTime(tokensLimit?.nextResetTime),
+        weeklyPercent: 0,
         weeklyResetsAt: null,
         monthlyPercent: timeLimit ? clamp(timeLimit.percentage) : undefined,
-        monthlyResetsAt: parseResetTime(timeLimit?.nextResetTime),
+        monthlyResetsAt: timeLimit ? (parseResetTime(timeLimit.nextResetTime) ?? null) : undefined,
     };
 }
 /**

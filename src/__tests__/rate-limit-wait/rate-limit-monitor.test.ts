@@ -38,6 +38,8 @@ describe('rate-limit-monitor', () => {
         weeklyPercent: 50,
         fiveHourResetsAt: resetTime,
         weeklyResetsAt: null,
+        monthlyPercent: 0,
+        monthlyResetsAt: null,
       });
 
       const result = await checkRateLimitStatus();
@@ -56,6 +58,8 @@ describe('rate-limit-monitor', () => {
         weeklyPercent: 100,
         fiveHourResetsAt: null,
         weeklyResetsAt: resetTime,
+        monthlyPercent: 0,
+        monthlyResetsAt: null,
       });
 
       const result = await checkRateLimitStatus();
@@ -75,6 +79,8 @@ describe('rate-limit-monitor', () => {
         weeklyPercent: 100,
         fiveHourResetsAt: fiveHourReset,
         weeklyResetsAt: weeklyReset,
+        monthlyPercent: 0,
+        monthlyResetsAt: null,
       });
 
       const result = await checkRateLimitStatus();
@@ -92,6 +98,8 @@ describe('rate-limit-monitor', () => {
         weeklyPercent: 75,
         fiveHourResetsAt: null,
         weeklyResetsAt: null,
+        monthlyPercent: 0,
+        monthlyResetsAt: null,
       });
 
       const result = await checkRateLimitStatus();
@@ -143,6 +151,8 @@ describe('rate-limit-monitor', () => {
         isLimited: false,
         fiveHourResetsAt: null,
         weeklyResetsAt: null,
+        monthlyLimited: false,
+        monthlyResetsAt: null,
         nextResetAt: null,
         timeUntilResetMs: null,
         lastCheckedAt: new Date(),
@@ -158,6 +168,8 @@ describe('rate-limit-monitor', () => {
         isLimited: true,
         fiveHourResetsAt: new Date(),
         weeklyResetsAt: null,
+        monthlyLimited: false,
+        monthlyResetsAt: null,
         nextResetAt: new Date(),
         timeUntilResetMs: 3600000, // 1 hour
         lastCheckedAt: new Date(),
@@ -175,6 +187,8 @@ describe('rate-limit-monitor', () => {
         isLimited: true,
         fiveHourResetsAt: null,
         weeklyResetsAt: new Date(),
+        monthlyLimited: false,
+        monthlyResetsAt: null,
         nextResetAt: new Date(),
         timeUntilResetMs: 86400000, // 1 day
         lastCheckedAt: new Date(),
@@ -192,6 +206,8 @@ describe('rate-limit-monitor', () => {
         isLimited: true,
         fiveHourResetsAt: new Date(),
         weeklyResetsAt: new Date(),
+        monthlyLimited: false,
+        monthlyResetsAt: null,
         nextResetAt: new Date(),
         timeUntilResetMs: 3600000,
         lastCheckedAt: new Date(),
