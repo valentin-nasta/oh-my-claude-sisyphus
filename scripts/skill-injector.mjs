@@ -26,7 +26,8 @@ try {
 }
 
 // Constants (used by fallback)
-const USER_SKILLS_DIR = join(homedir(), '.claude', 'skills', 'omc-learned');
+const cfgDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+const USER_SKILLS_DIR = join(cfgDir, 'skills', 'omc-learned');
 const GLOBAL_SKILLS_DIR = join(homedir(), '.omc', 'skills');
 const PROJECT_SKILLS_SUBDIR = join('.omc', 'skills');
 const SKILL_EXTENSION = '.md';

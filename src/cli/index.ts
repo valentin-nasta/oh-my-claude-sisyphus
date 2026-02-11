@@ -575,6 +575,10 @@ const configStopCallback = program
   .option('--token <token>', 'Telegram bot token')
   .option('--chat <id>', 'Telegram chat ID')
   .option('--webhook <url>', 'Discord webhook URL')
+  .option('--tag-list <csv>', 'Replace tag list (comma-separated, telegram/discord only)')
+  .option('--add-tag <tag>', 'Append one tag (telegram/discord only)')
+  .option('--remove-tag <tag>', 'Remove one tag (telegram/discord only)')
+  .option('--clear-tags', 'Clear all tags (telegram/discord only)')
   .option('--show', 'Show current configuration')
   .addHelpText('after', `
 Types:
@@ -619,6 +623,42 @@ Examples:
       enabled = false;
     }
 
+    const hasTagListChanges = options.tagList !== undefined
+      || options.addTag !== undefined
+      || options.removeTag !== undefined
+      || options.clearTags;
+
+    const parseTagList = (value: string): string[] => value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+    const resolveTagList = (currentTagList?: string[]): string[] => {
+      let next = options.tagList !== undefined
+        ? parseTagList(options.tagList)
+        : [...(currentTagList ?? [])];
+
+      if (options.clearTags) {
+        next = [];
+      }
+
+      if (options.addTag !== undefined) {
+        const tagToAdd = String(options.addTag).trim();
+        if (tagToAdd && !next.includes(tagToAdd)) {
+          next.push(tagToAdd);
+        }
+      }
+
+      if (options.removeTag !== undefined) {
+        const tagToRemove = String(options.removeTag).trim();
+        if (tagToRemove) {
+          next = next.filter((tag) => tag !== tagToRemove);
+        }
+      }
+
+      return next;
+    };
+
     // Update config based on type
     switch (type) {
       case 'file': {
@@ -642,9 +682,11 @@ Examples:
           process.exit(1);
         }
         config.stopHookCallbacks.telegram = {
+          ...current,
           enabled: enabled ?? current?.enabled ?? false,
           botToken: options.token ?? current?.botToken,
           chatId: options.chat ?? current?.chatId,
+          tagList: hasTagListChanges ? resolveTagList(current?.tagList) : current?.tagList,
         };
         break;
       }
@@ -656,8 +698,10 @@ Examples:
           process.exit(1);
         }
         config.stopHookCallbacks.discord = {
+          ...current,
           enabled: enabled ?? current?.enabled ?? false,
           webhookUrl: options.webhook ?? current?.webhookUrl,
+          tagList: hasTagListChanges ? resolveTagList(current?.tagList) : current?.tagList,
         };
         break;
       }

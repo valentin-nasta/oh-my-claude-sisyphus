@@ -18,24 +18,26 @@ const askCodexTool = tool(
   `Send a prompt to OpenAI Codex CLI for analytical/planning tasks. Codex excels at architecture review, planning validation, critical analysis, and code/security review validation. Requires agent_role to specify the perspective. Recommended roles: ${CODEX_RECOMMENDED_ROLES.join(', ')}. Any valid OMC agent role is accepted. Requires Codex CLI (npm install -g @openai/codex).`,
   {
     agent_role: { type: "string", description: `Required. Agent perspective for Codex. Recommended: ${CODEX_RECOMMENDED_ROLES.join(', ')}. Any valid OMC agent role is accepted.` },
-    prompt_file: { type: "string", description: "Path to file containing the prompt" },
-    output_file: { type: "string", description: "Required. Path to write response. Response content is NOT returned inline - read from this file." },
+    prompt: { type: "string", description: "Inline prompt text. Alternative to prompt_file -- the tool auto-persists to a file for audit trail. Use for simpler invocations where file management is unnecessary. If both prompt and prompt_file are provided, prompt_file takes precedence." },
+    prompt_file: { type: "string", description: "Path to file containing the prompt. Required unless 'prompt' is provided inline. A defined (non-undefined) `prompt_file` value selects file mode; `prompt_file` must be a non-empty string when used. Passing null or non-string values triggers file-mode validation (not inline fallback)." },
+    output_file: { type: "string", description: "Required for file-based mode (prompt_file). Auto-generated in inline mode (prompt). Response content is returned inline only when using prompt parameter." },
     context_files: { type: "array", items: { type: "string" }, description: "File paths to include as context (contents will be prepended to prompt)" },
     model: { type: "string", description: `Codex model to use (default: ${CODEX_DEFAULT_MODEL}). Set OMC_CODEX_DEFAULT_MODEL env var to change default.` },
-    background: { type: "boolean", description: "Run in background (non-blocking). Returns immediately with job metadata and file paths. Check response file for completion." },
+    background: { type: "boolean", description: "Run in background (non-blocking). Returns immediately with job metadata and file paths. Check response file for completion. Not available with inline prompt." },
     working_directory: { type: "string", description: "Working directory for path resolution and CLI execution. Defaults to process.cwd()." },
   } as any,
   async (args: any) => {
-    const { prompt_file, output_file, agent_role, model, context_files, background, working_directory } = args as {
-      prompt_file: string;
-      output_file: string;
+    const { prompt, prompt_file, output_file, agent_role, model, context_files, background, working_directory } = args as {
+      prompt?: string;
+      prompt_file?: string;
+      output_file?: string;
       agent_role: string;
       model?: string;
       context_files?: string[];
       background?: boolean;
       working_directory?: string;
     };
-    return handleAskCodex({ prompt_file, output_file, agent_role, model, context_files, background, working_directory });
+    return handleAskCodex({ prompt, prompt_file, output_file, agent_role, model, context_files, background, working_directory });
   }
 );
 

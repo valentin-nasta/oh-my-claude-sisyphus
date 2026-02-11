@@ -9,12 +9,12 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { ConcurrencyManager } from './concurrency.js';
 /** Default task timeout: 30 minutes */
 const DEFAULT_TASK_TTL_MS = 30 * 60 * 1000;
 /** Storage directory for task state */
-const BACKGROUND_TASKS_DIR = join(homedir(), '.claude', '.omc', 'background-tasks');
+const BACKGROUND_TASKS_DIR = join(getClaudeConfigDir(), '.omc', 'background-tasks');
 /**
  * Manages background tasks for the Sisyphus system.
  */

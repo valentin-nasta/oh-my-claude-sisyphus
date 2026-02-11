@@ -135,6 +135,30 @@ This is a TypeScript monorepo using:
 - Tests alongside source files
 ```
 
+### Stop Callback Notification Tags
+
+Configure tags for Telegram/Discord stop callbacks with `omc config-stop-callback`.
+
+```bash
+# Set/replace tags
+omc config-stop-callback telegram --enable --token <bot_token> --chat <chat_id> --tag-list "@alice,bob"
+omc config-stop-callback discord --enable --webhook <url> --tag-list "@here,123456789012345678,role:987654321098765432"
+
+# Incremental updates
+omc config-stop-callback telegram --add-tag charlie
+omc config-stop-callback discord --remove-tag @here
+omc config-stop-callback discord --clear-tags
+
+# Inspect current callback config
+omc config-stop-callback telegram --show
+omc config-stop-callback discord --show
+```
+
+Tag behavior:
+- Telegram: `alice` is normalized to `@alice`
+- Discord: supports `@here`, `@everyone`, numeric user IDs (`<@id>`), and role tags (`role:<id>` -> `<@&id>`)
+- `file` callbacks ignore tag options
+
 ---
 
 ## Agents (28 Total)

@@ -4,6 +4,7 @@
  * Shared utilities for injecting system prompts into Codex/Gemini MCP tools.
  * Enables agents to pass their personality/guidelines when consulting external models.
  */
+import type { ExternalModelProvider } from '../shared/types.js';
 /**
  * Check if a role name is valid (contains only allowed characters).
  * This is a security check, not an allowlist check.
@@ -25,12 +26,37 @@ export type AgentRole = string;
  *
  * Returns undefined if neither is provided or resolution fails.
  */
-export declare function resolveSystemPrompt(systemPrompt?: string, agentRole?: string): string | undefined;
+export declare function resolveSystemPrompt(systemPrompt?: string, agentRole?: string, provider?: ExternalModelProvider): string | undefined;
 /**
  * Wrap file content with untrusted delimiters to prevent prompt injection.
  * Each file's content is clearly marked as data to analyze, not instructions.
  */
 export declare function wrapUntrustedFileContent(filepath: string, content: string): string;
+/**
+ * Wrap CLI response content with untrusted delimiters to prevent prompt injection.
+ * Used for inline CLI responses that are returned directly to the caller.
+ */
+export declare function wrapUntrustedCliResponse(content: string, metadata: {
+    source: string;
+    tool: string;
+}): string;
+export declare function singleErrorBlock(text: string): {
+    content: [{
+        type: 'text';
+        text: string;
+    }];
+    isError: true;
+};
+export declare function inlineSuccessBlocks(metadataText: string, wrappedResponse: string): {
+    content: [{
+        type: 'text';
+        text: string;
+    }, {
+        type: 'text';
+        text: string;
+    }];
+    isError: false;
+};
 /**
  * Build the full prompt with system prompt prepended.
  *

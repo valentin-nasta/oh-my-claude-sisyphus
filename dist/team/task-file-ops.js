@@ -7,7 +7,7 @@
  */
 import { readFileSync, readdirSync, existsSync, openSync, closeSync, unlinkSync, writeSync, statSync, constants as fsConstants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { sanitizeName } from './tmux-session.js';
 import { atomicWriteJson, validateResolvedPath, ensureDirWithMode } from './fs-utils.js';
 /** Default age (ms) after which a lock file is considered stale. */
@@ -141,8 +141,8 @@ function sanitizeTaskId(taskId) {
 }
 /** Paths helper */
 function tasksDir(teamName) {
-    const result = join(homedir(), '.claude', 'tasks', sanitizeName(teamName));
-    validateResolvedPath(result, join(homedir(), '.claude', 'tasks'));
+    const result = join(getClaudeConfigDir(), 'tasks', sanitizeName(teamName));
+    validateResolvedPath(result, join(getClaudeConfigDir(), 'tasks'));
     return result;
 }
 function taskPath(teamName, taskId) {

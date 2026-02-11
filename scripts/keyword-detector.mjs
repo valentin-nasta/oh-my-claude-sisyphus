@@ -170,7 +170,8 @@ function linkRalphTeam(directory, sessionId) {
 function isTeamEnabled() {
   try {
     // Check settings.json first (authoritative, user-controlled)
-    const settingsPath = join(homedir(), '.claude', 'settings.json');
+    const cfgDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+    const settingsPath = join(cfgDir, 'settings.json');
     if (existsSync(settingsPath)) {
       const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
       if (settings.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === '1' ||

@@ -12,7 +12,7 @@
  * Response: { five_hour: { utilization }, seven_day: { utilization } }
  */
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { join, dirname } from 'path';
 import { execSync } from 'child_process';
 import https from 'https';
@@ -31,7 +31,7 @@ const DEFAULT_OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
  * Get the cache file path
  */
 function getCachePath() {
-    return join(homedir(), '.claude/plugins/oh-my-claudecode/.usage-cache.json');
+    return join(getClaudeConfigDir(), 'plugins/oh-my-claudecode/.usage-cache.json');
 }
 /**
  * Read cached usage data
@@ -127,7 +127,7 @@ function readKeychainCredentials() {
  */
 function readFileCredentials() {
     try {
-        const credPath = join(homedir(), '.claude/.credentials.json');
+        const credPath = join(getClaudeConfigDir(), '.credentials.json');
         if (!existsSync(credPath))
             return null;
         const content = readFileSync(credPath, 'utf-8');
@@ -327,7 +327,7 @@ function fetchUsageFromZai() {
  */
 function writeBackCredentials(creds) {
     try {
-        const credPath = join(homedir(), '.claude/.credentials.json');
+        const credPath = join(getClaudeConfigDir(), '.credentials.json');
         if (!existsSync(credPath))
             return;
         const content = readFileSync(credPath, 'utf-8');

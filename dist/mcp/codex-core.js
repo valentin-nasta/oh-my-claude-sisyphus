@@ -8,14 +8,14 @@
  * This module is SDK-agnostic and contains no dependencies on @anthropic-ai/claude-agent-sdk.
  */
 import { spawn } from 'child_process';
-import { readFileSync, realpathSync, statSync } from 'fs';
-import { resolve, relative, sep, isAbsolute } from 'path';
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'fs';
+import { resolve, relative, sep, isAbsolute, join } from 'path';
 import { createStdoutCollector, safeWriteOutputFile } from './shared-exec.js';
 import { detectCodexCli } from './cli-detection.js';
 import { getWorktreeRoot } from '../lib/worktree-paths.js';
 import { isExternalPromptAllowed } from './mcp-config.js';
-import { resolveSystemPrompt, buildPromptWithSystemContext, wrapUntrustedFileContent, isValidAgentRoleName, VALID_AGENT_ROLES } from './prompt-injection.js';
-import { persistPrompt, persistResponse, getExpectedResponsePath } from './prompt-persistence.js';
+import { resolveSystemPrompt, buildPromptWithSystemContext, wrapUntrustedFileContent, wrapUntrustedCliResponse, isValidAgentRoleName, VALID_AGENT_ROLES, singleErrorBlock, inlineSuccessBlocks } from './prompt-injection.js';
+import { persistPrompt, persistResponse, getExpectedResponsePath, getPromptsDir, slugify, generatePromptId } from './prompt-persistence.js';
 import { writeJobStatus, getStatusFilePath, readJobStatus } from './prompt-persistence.js';
 import { resolveExternalModel, buildFallbackChain, CODEX_MODEL_FALLBACKS, } from '../features/model-routing/external-model-policy.js';
 import { loadConfig } from '../config/loader.js';
@@ -321,6 +321,7 @@ export function executeCodexBackground(fullPrompt, modelInput, jobMeta, workingD
             const timeoutHandle = setTimeout(() => {
                 if (!settled) {
                     settled = true;
+                    spawnedPids.delete(pid);
                     try {
                         // Detached children are process-group leaders on POSIX.
                         if (process.platform !== 'win32')
@@ -510,6 +511,9 @@ export function validateAndReadFile(filePath, baseDir) {
  * the SDK server and the standalone stdio server.
  */
 export async function handleAskCodex(args) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        return singleErrorBlock('Invalid request: args must be an object.');
+    }
     const { agent_role, context_files } = args;
     // Resolve model based on configuration and agent role
     const config = loadConfig();
@@ -528,17 +532,15 @@ export async function handleAskCodex(args) {
     const pathPolicy = process.env.OMC_ALLOW_EXTERNAL_WORKDIR === '1' ? 'permissive' : 'strict';
     try {
         baseDirReal = realpathSync(baseDir);
+        baseDir = baseDirReal;
     }
     catch (err) {
         const errorToken = 'E_WORKDIR_INVALID';
-        return {
-            content: [{ type: 'text', text: `${errorToken}: working_directory '${args.working_directory}' does not exist or is not accessible.
+        return singleErrorBlock(`${errorToken}: working_directory '${args.working_directory}' does not exist or is not accessible.
 Error: ${err.message}
 Resolved working directory: ${baseDir}
 Path policy: ${pathPolicy}
-Suggested: ensure the working directory exists and is accessible` }],
-            isError: true
-        };
+Suggested: ensure the working directory exists and is accessible`);
     }
     // Security: validate working_directory is within worktree (unless bypass enabled)
     if (pathPolicy === 'strict') {
@@ -556,85 +558,103 @@ Suggested: ensure the working directory exists and is accessible` }],
                 const relToWorktree = relative(worktreeReal, baseDirReal);
                 if (relToWorktree.startsWith('..') || isAbsolute(relToWorktree)) {
                     const errorToken = 'E_WORKDIR_INVALID';
-                    return {
-                        content: [{ type: 'text', text: `${errorToken}: working_directory '${args.working_directory}' is outside the project worktree (${worktreeRoot}).
+                    return singleErrorBlock(`${errorToken}: working_directory '${args.working_directory}' is outside the project worktree (${worktreeRoot}).
 Requested: ${args.working_directory}
 Resolved working directory: ${baseDirReal}
 Worktree root: ${worktreeRoot}
 Path policy: ${pathPolicy}
-Suggested: use a working_directory within the project worktree, or set OMC_ALLOW_EXTERNAL_WORKDIR=1 to bypass` }],
-                        isError: true
-                    };
+Suggested: use a working_directory within the project worktree, or set OMC_ALLOW_EXTERNAL_WORKDIR=1 to bypass`);
                 }
             }
         }
     }
     // Validate agent_role - must be non-empty and pass character validation
-    if (!agent_role || !agent_role.trim()) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `agent_role is required. Recommended roles for Codex: ${CODEX_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+    if (typeof agent_role !== 'string' || !agent_role.trim()) {
+        return singleErrorBlock('agent_role is required and must be a non-empty string.');
     }
     if (!isValidAgentRoleName(agent_role)) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Invalid agent_role: "${agent_role}". Role names must contain only lowercase letters, numbers, and hyphens. Recommended for Codex: ${CODEX_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Invalid agent_role: "${agent_role}". Role names must contain only lowercase letters, numbers, and hyphens. Recommended for Codex: ${CODEX_RECOMMENDED_ROLES.join(', ')}`);
     }
     // Validate agent_role exists in discovered roles (allowlist enforcement)
     if (!VALID_AGENT_ROLES.includes(agent_role)) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Unknown agent_role: "${agent_role}". Available roles: ${VALID_AGENT_ROLES.join(', ')}. Recommended for Codex: ${CODEX_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Unknown agent_role: "${agent_role}". Available roles: ${VALID_AGENT_ROLES.join(', ')}. Recommended for Codex: ${CODEX_RECOMMENDED_ROLES.join(', ')}`);
     }
-    // Validate output_file is provided
-    if (!args.output_file || !args.output_file.trim()) {
-        return {
-            content: [{ type: 'text', text: 'output_file is required. Specify a path where the response should be written.' }],
-            isError: true
-        };
+    // Determine inline intent: caller provided `prompt` field without a defined `prompt_file` field.
+    // Defined-value precedence: if `prompt_file` key exists with a non-undefined value, file mode wins.
+    // This handles JSON-RPC serializers that emit `prompt_file: undefined` as "not provided".
+    // Separate intent detection (field presence) from content validation (non-empty).
+    const inlinePrompt = typeof args.prompt === 'string' ? args.prompt : undefined;
+    const hasPromptFileField = Object.prototype.hasOwnProperty.call(args, 'prompt_file') && args.prompt_file !== undefined;
+    const promptFileInput = hasPromptFileField && typeof args.prompt_file === 'string' ? args.prompt_file.trim() || undefined : undefined;
+    let resolvedPromptFile = promptFileInput;
+    let resolvedOutputFile = typeof args.output_file === 'string' ? args.output_file : undefined;
+    const hasInlineIntent = inlinePrompt !== undefined && !hasPromptFileField;
+    const isInlineMode = hasInlineIntent && inlinePrompt.trim().length > 0;
+    // Reject empty/whitespace inline prompt with explicit error BEFORE any side effects
+    if (hasInlineIntent && !inlinePrompt?.trim()) {
+        return singleErrorBlock('Inline prompt is empty. Provide a non-empty prompt string.');
     }
-    // Check if deprecated 'prompt' parameter is being used
-    if ('prompt' in args) {
-        return {
-            content: [{ type: 'text', text: "The 'prompt' parameter has been removed. Write the prompt to a file (recommended: .omc/prompts/) and pass 'prompt_file' instead." }],
-            isError: true
-        };
+    // Reject oversized inline prompts before any persistence
+    const MAX_INLINE_PROMPT_BYTES = 256 * 1024; // 256 KB
+    if (isInlineMode && Buffer.byteLength(inlinePrompt, 'utf-8') > MAX_INLINE_PROMPT_BYTES) {
+        return singleErrorBlock(`Inline prompt exceeds maximum size (${MAX_INLINE_PROMPT_BYTES} bytes). Use prompt_file for large prompts.`);
     }
-    // Validate prompt_file is provided and not empty
-    if (!args.prompt_file || !args.prompt_file.trim()) {
-        return {
-            content: [{ type: 'text', text: 'prompt_file is required.' }],
-            isError: true
-        };
+    // Inline mode is foreground only - check BEFORE any file persistence to avoid leaks
+    if (isInlineMode && args.background) {
+        return singleErrorBlock('Inline prompt mode is foreground only. Use prompt_file for background execution.');
     }
-    // Resolve prompt from prompt_file
+    // Explicit type error for non-string prompt_file (e.g., null, number, object)
+    if (hasPromptFileField && !promptFileInput) {
+        return singleErrorBlock('prompt_file must be a non-empty string when provided. Received non-string or empty value.');
+    }
+    let inlineRequestId;
+    // Handle inline prompt: auto-persist to file for audit trail
+    if (isInlineMode) {
+        inlineRequestId = generatePromptId();
+        try {
+            const promptsDir = getPromptsDir(baseDir);
+            mkdirSync(promptsDir, { recursive: true });
+            const slug = slugify(inlinePrompt);
+            const inlinePromptFile = join(promptsDir, `codex-inline-${slug}-${inlineRequestId}.md`);
+            writeFileSync(inlinePromptFile, inlinePrompt, { encoding: 'utf-8', mode: 0o600 });
+            const resolvedPromptFileLocal = inlinePromptFile;
+            const resolvedOutputFileLocal = (!resolvedOutputFile || !resolvedOutputFile.trim())
+                ? join(promptsDir, `codex-inline-response-${slug}-${inlineRequestId}.md`)
+                : resolvedOutputFile;
+            resolvedPromptFile = resolvedPromptFileLocal;
+            resolvedOutputFile = resolvedOutputFileLocal;
+        }
+        catch (err) {
+            const reason = err instanceof Error ? err.message : 'unknown error';
+            return singleErrorBlock(`Failed to persist inline prompt (${reason}). Check working directory permissions and disk space.`);
+        }
+    }
+    // Validate that at least one prompt source is provided.
+    // Use type-guarded promptFileInput to avoid .trim() TypeError on non-string values.
+    const effectivePromptFile = resolvedPromptFile;
+    if (!effectivePromptFile || !effectivePromptFile.trim()) {
+        return singleErrorBlock("Either 'prompt' (inline) or 'prompt_file' (file path) is required.");
+    }
+    // output_file is required in file mode.
+    // Use typeof guard to avoid .trim() TypeError on non-string values.
+    const effectiveOutputFile = resolvedOutputFile;
+    if (!effectiveOutputFile || !effectiveOutputFile.trim()) {
+        return singleErrorBlock('output_file is required. Specify a path where the response should be written.');
+    }
+    // Resolve prompt from prompt_file (validated non-empty above)
     let resolvedPrompt;
-    const resolvedPath = resolve(baseDir, args.prompt_file);
+    const promptFile = effectivePromptFile;
+    const resolvedPath = resolve(baseDir, promptFile);
     const cwdReal = realpathSync(baseDir);
     const relPath = relative(cwdReal, resolvedPath);
     if (!isExternalPromptAllowed() && (relPath === '..' || relPath.startsWith('..' + sep) || isAbsolute(relPath))) {
         const errorToken = 'E_PATH_OUTSIDE_WORKDIR_PROMPT';
-        return {
-            content: [{ type: 'text', text: `${errorToken}: prompt_file '${args.prompt_file}' resolves outside working_directory '${baseDirReal}'.
-Requested: ${args.prompt_file}
+        return singleErrorBlock(`${errorToken}: prompt_file '${promptFile}' resolves outside working_directory '${baseDirReal}'.
+Requested: ${promptFile}
 Working directory: ${baseDirReal}
 Resolved working directory: ${baseDirReal}
 Path policy: ${pathPolicy}
-Suggested: place the prompt file within the working directory or set working_directory to a common ancestor` }],
-            isError: true
-        };
+Suggested: place the prompt file within the working directory or set working_directory to a common ancestor`);
     }
     // BEFORE reading, resolve symlinks and validate boundary
     let resolvedReal;
@@ -643,45 +663,33 @@ Suggested: place the prompt file within the working directory or set working_dir
     }
     catch (err) {
         const errorToken = 'E_PATH_RESOLUTION_FAILED';
-        return {
-            content: [{ type: 'text', text: `${errorToken}: Failed to resolve prompt_file '${args.prompt_file}'.
+        return singleErrorBlock(`${errorToken}: Failed to resolve prompt_file '${promptFile}'.
 Error: ${err.message}
 Resolved working directory: ${baseDirReal}
 Path policy: ${pathPolicy}
-Suggested: ensure the prompt file exists and is accessible` }],
-            isError: true
-        };
+Suggested: ensure the prompt file exists and is accessible`);
     }
     const relReal = relative(cwdReal, resolvedReal);
     if (!isExternalPromptAllowed() && (relReal === '..' || relReal.startsWith('..' + sep) || isAbsolute(relReal))) {
         const errorToken = 'E_PATH_OUTSIDE_WORKDIR_PROMPT';
-        return {
-            content: [{ type: 'text', text: `${errorToken}: prompt_file '${args.prompt_file}' resolves to a path outside working_directory '${baseDirReal}'.
-Requested: ${args.prompt_file}
+        return singleErrorBlock(`${errorToken}: prompt_file '${promptFile}' resolves to a path outside working_directory '${baseDirReal}'.
+Requested: ${promptFile}
 Resolved path: ${resolvedReal}
 Working directory: ${baseDirReal}
 Resolved working directory: ${baseDirReal}
 Path policy: ${pathPolicy}
-Suggested: place the prompt file within the working directory or set working_directory to a common ancestor` }],
-            isError: true
-        };
+Suggested: place the prompt file within the working directory or set working_directory to a common ancestor`);
     }
     // Now safe to read from the validated real path
     try {
         resolvedPrompt = readFileSync(resolvedReal, 'utf-8');
     }
     catch (err) {
-        return {
-            content: [{ type: 'text', text: `Failed to read prompt_file '${args.prompt_file}': ${err.message}` }],
-            isError: true
-        };
+        return singleErrorBlock(`Failed to read prompt_file '${promptFile}': ${err.message}`);
     }
     // Check for empty prompt
     if (!resolvedPrompt.trim()) {
-        return {
-            content: [{ type: 'text', text: `prompt_file '${args.prompt_file}' is empty.` }],
-            isError: true
-        };
+        return singleErrorBlock(`prompt_file '${promptFile}' is empty.`);
     }
     // Add headless execution context so Codex produces comprehensive output
     const userPrompt = `[HEADLESS SESSION] You are running non-interactively in a headless pipeline. Produce your FULL, comprehensive analysis directly in your response. Do NOT ask for clarification or confirmation - work thoroughly with all provided context. Do NOT write brief acknowledgments - your response IS the deliverable.
@@ -690,16 +698,10 @@ ${resolvedPrompt}`;
     // Check CLI availability
     const detection = detectCodexCli();
     if (!detection.available) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Codex CLI is not available: ${detection.error}\n\n${detection.installHint}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Codex CLI is not available: ${detection.error}\n\n${detection.installHint}`);
     }
     // Resolve system prompt from agent role
-    const resolvedSystemPrompt = resolveSystemPrompt(undefined, agent_role);
+    const resolvedSystemPrompt = resolveSystemPrompt(undefined, agent_role, 'codex');
     // Build file context
     let fileContext;
     if (context_files && context_files.length > 0) {
@@ -724,10 +726,7 @@ ${resolvedPrompt}`;
     // Background mode: return immediately with job metadata
     if (args.background) {
         if (!promptResult) {
-            return {
-                content: [{ type: 'text', text: 'Failed to persist prompt for background execution' }],
-                isError: true
-            };
+            return singleErrorBlock('Failed to persist prompt for background execution');
         }
         const statusFilePath = getStatusFilePath('codex', promptResult.slug, promptResult.id, baseDir);
         const result = executeCodexBackground(fullPrompt, args.model, {
@@ -740,10 +739,7 @@ ${resolvedPrompt}`;
             responseFile: expectedResponsePath,
         }, baseDir);
         if ('error' in result) {
-            return {
-                content: [{ type: 'text', text: `Failed to spawn background job: ${result.error}` }],
-                isError: true
-            };
+            return singleErrorBlock(`Failed to spawn background job: ${result.error}`);
         }
         return {
             content: [{
@@ -792,33 +788,33 @@ ${resolvedPrompt}`;
         // We no longer use -o (--output-last-message) because it only captures the
         // last agent message, which may be a brief acknowledgment. The JSONL-parsed
         // stdout contains ALL agent messages and is always more comprehensive.
-        if (args.output_file) {
-            const writeResult = safeWriteOutputFile(args.output_file, response, baseDirReal, '[codex-core]');
+        if (effectiveOutputFile) {
+            const writeResult = safeWriteOutputFile(effectiveOutputFile, response, baseDirReal, '[codex-core]');
             if (!writeResult.success) {
-                return {
-                    content: [{
-                            type: 'text',
-                            text: `${paramLines}\n\n---\n\n${writeResult.errorMessage}\n\nresolved_working_directory: ${baseDirReal}\npath_policy: ${pathPolicy}`
-                        }],
-                    isError: true
-                };
+                return singleErrorBlock(`${paramLines}\n\n---\n\n${writeResult.errorMessage}\n\nresolved_working_directory: ${baseDirReal}\npath_policy: ${pathPolicy}`);
             }
+        }
+        const responseLines = [paramLines];
+        const fallbackLine = usedFallback ? `Fallback: used model ${actualModel}` : undefined;
+        if (fallbackLine) {
+            responseLines.push(fallbackLine);
+        }
+        // In inline mode, return metadata + raw response as separate content blocks
+        if (isInlineMode) {
+            responseLines.push(`**Request ID:** ${inlineRequestId}`);
+            const metadataText = responseLines.join('\n');
+            const wrappedResponse = wrapUntrustedCliResponse(response, { source: 'inline-cli-response', tool: 'ask_codex' });
+            return inlineSuccessBlocks(metadataText, wrappedResponse);
         }
         return {
             content: [{
                     type: 'text',
-                    text: paramLines
+                    text: responseLines.join('\n')
                 }]
         };
     }
     catch (err) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `${paramLines}\n\n---\n\nCodex CLI error: ${err.message}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`${paramLines}\n\n---\n\nCodex CLI error: ${err.message}`);
     }
 }
 //# sourceMappingURL=codex-core.js.map

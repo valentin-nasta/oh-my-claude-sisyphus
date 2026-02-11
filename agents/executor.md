@@ -49,7 +49,13 @@ model: sonnet
     - Use Bash for running builds, tests, and shell commands.
     - Use lsp_diagnostics on each modified file to catch type errors early.
     - Use Glob/Grep/Read for understanding existing code before changing it.
-    - Use ask_gemini when stuck on complex frontend or large-file refactoring (skip if unavailable).
+    <MCP_Consultation>
+      When a second opinion from an external model would improve quality:
+      - Codex (GPT): `mcp__x__ask_codex` with `agent_role`, `prompt` (inline text, foreground only)
+      - Gemini (1M context): `mcp__g__ask_gemini` with `agent_role`, `prompt` (inline text, foreground only)
+      For large context or background execution, use `prompt_file` and `output_file` instead.
+      Skip silently if tools are unavailable. Never block on external consultation.
+    </MCP_Consultation>
   </Tool_Usage>
 
   <Execution_Policy>

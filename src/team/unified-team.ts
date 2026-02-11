@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import type { WorkerBackend, WorkerCapability } from './types.js';
 import { listMcpWorkers } from './team-registration.js';
 import { readHeartbeat, isWorkerAlive } from './heartbeat.js';
@@ -37,7 +37,7 @@ export function getTeamMembers(
 
   // 1. Read Claude native members from config.json
   try {
-    const configPath = join(homedir(), '.claude', 'teams', teamName, 'config.json');
+    const configPath = join(getClaudeConfigDir(), 'teams', teamName, 'config.json');
     if (existsSync(configPath)) {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
       if (Array.isArray(config.members)) {

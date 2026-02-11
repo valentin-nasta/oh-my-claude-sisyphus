@@ -12,14 +12,14 @@
  * - gemini-standalone-server.ts (stdio-based external process server)
  */
 import { spawn } from 'child_process';
-import { readFileSync, realpathSync, statSync } from 'fs';
-import { resolve, relative, sep, isAbsolute } from 'path';
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'fs';
+import { resolve, relative, sep, isAbsolute, join } from 'path';
 import { createStdoutCollector, safeWriteOutputFile } from './shared-exec.js';
 import { detectGeminiCli } from './cli-detection.js';
 import { getWorktreeRoot } from '../lib/worktree-paths.js';
 import { isExternalPromptAllowed } from './mcp-config.js';
-import { resolveSystemPrompt, buildPromptWithSystemContext, wrapUntrustedFileContent, isValidAgentRoleName, VALID_AGENT_ROLES } from './prompt-injection.js';
-import { persistPrompt, persistResponse, getExpectedResponsePath } from './prompt-persistence.js';
+import { resolveSystemPrompt, buildPromptWithSystemContext, wrapUntrustedFileContent, wrapUntrustedCliResponse, isValidAgentRoleName, VALID_AGENT_ROLES, singleErrorBlock, inlineSuccessBlocks } from './prompt-injection.js';
+import { persistPrompt, persistResponse, getExpectedResponsePath, getPromptsDir, generatePromptId, slugify } from './prompt-persistence.js';
 import { writeJobStatus, getStatusFilePath, readJobStatus } from './prompt-persistence.js';
 import { resolveExternalModel, buildFallbackChain, GEMINI_MODEL_FALLBACKS, } from '../features/model-routing/external-model-policy.js';
 import { loadConfig } from '../config/loader.js';
@@ -193,6 +193,7 @@ export function executeGeminiBackground(fullPrompt, modelInput, jobMeta, working
             const timeoutHandle = setTimeout(() => {
                 if (!settled) {
                     settled = true;
+                    spawnedPids.delete(pid);
                     try {
                         if (process.platform !== 'win32')
                             process.kill(-pid, 'SIGTERM');
@@ -386,6 +387,9 @@ export function validateAndReadFile(filePath, baseDir) {
  * @returns MCP-compatible response with content array
  */
 export async function handleAskGemini(args) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        return singleErrorBlock('Invalid request: args must be an object.');
+    }
     const { agent_role, files } = args;
     // Resolve model based on configuration and agent role
     const config = loadConfig();
@@ -394,7 +398,7 @@ export async function handleAskGemini(args) {
         explicitProvider: 'gemini',
         explicitModel: args.model, // user explicitly passed model
     });
-    const resolvedModel = resolved.model;
+    const resolvedModel = resolved.model || GEMINI_DEFAULT_MODEL;
     // Derive baseDir from working_directory if provided
     let baseDir = args.working_directory || process.cwd();
     let baseDirReal;
@@ -402,12 +406,10 @@ export async function handleAskGemini(args) {
     const pathPolicy = process.env.OMC_ALLOW_EXTERNAL_WORKDIR === '1' ? 'permissive' : 'strict';
     try {
         baseDirReal = realpathSync(baseDir);
+        baseDir = baseDirReal;
     }
     catch (err) {
-        return {
-            content: [{ type: 'text', text: `E_WORKDIR_INVALID: working_directory '${args.working_directory}' does not exist or is not accessible.\nError: ${err.message}\nResolved working directory: ${baseDir}\nPath policy: ${pathPolicy}\nSuggested: ensure the working directory exists and is accessible` }],
-            isError: true
-        };
+        return singleErrorBlock(`E_WORKDIR_INVALID: working_directory '${args.working_directory}' does not exist or is not accessible.\nError: ${err.message}\nResolved working directory: ${baseDir}\nPath policy: ${pathPolicy}\nSuggested: ensure the working directory exists and is accessible`);
     }
     // Security: validate working_directory is within worktree (unless bypass enabled)
     if (process.env.OMC_ALLOW_EXTERNAL_WORKDIR !== '1') {
@@ -424,80 +426,93 @@ export async function handleAskGemini(args) {
             if (worktreeReal) {
                 const relToWorktree = relative(worktreeReal, baseDirReal);
                 if (relToWorktree.startsWith('..') || isAbsolute(relToWorktree)) {
-                    return {
-                        content: [{
-                                type: 'text',
-                                text: `E_WORKDIR_INVALID: working_directory '${args.working_directory}' is outside the project worktree (${worktreeRoot}).\nRequested: ${args.working_directory}\nResolved working directory: ${baseDirReal}\nWorktree root: ${worktreeRoot}\nPath policy: ${pathPolicy}\nSuggested: use a working_directory within the project worktree, or set OMC_ALLOW_EXTERNAL_WORKDIR=1 to bypass`
-                            }],
-                        isError: true
-                    };
+                    return singleErrorBlock(`E_WORKDIR_INVALID: working_directory '${args.working_directory}' is outside the project worktree (${worktreeRoot}).\nRequested: ${args.working_directory}\nResolved working directory: ${baseDirReal}\nWorktree root: ${worktreeRoot}\nPath policy: ${pathPolicy}\nSuggested: use a working_directory within the project worktree, or set OMC_ALLOW_EXTERNAL_WORKDIR=1 to bypass`);
                 }
             }
         }
     }
     // Validate agent_role - must be non-empty and pass character validation
-    if (!agent_role || !agent_role.trim()) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `agent_role is required. Recommended roles for Gemini: ${GEMINI_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+    if (typeof agent_role !== 'string' || !agent_role.trim()) {
+        return singleErrorBlock('agent_role is required and must be a non-empty string.');
     }
     if (!isValidAgentRoleName(agent_role)) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Invalid agent_role: "${agent_role}". Role names must contain only lowercase letters, numbers, and hyphens. Recommended for Gemini: ${GEMINI_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Invalid agent_role: "${agent_role}". Role names must contain only lowercase letters, numbers, and hyphens. Recommended for Gemini: ${GEMINI_RECOMMENDED_ROLES.join(', ')}`);
     }
     // Validate agent_role exists in discovered roles (allowlist enforcement)
     if (!VALID_AGENT_ROLES.includes(agent_role)) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Unknown agent_role: "${agent_role}". Available roles: ${VALID_AGENT_ROLES.join(', ')}. Recommended for Gemini: ${GEMINI_RECOMMENDED_ROLES.join(', ')}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Unknown agent_role: "${agent_role}". Available roles: ${VALID_AGENT_ROLES.join(', ')}. Recommended for Gemini: ${GEMINI_RECOMMENDED_ROLES.join(', ')}`);
     }
-    // Validate output_file is provided
-    if (!args.output_file || !args.output_file.trim()) {
-        return {
-            content: [{ type: 'text', text: 'output_file is required. Specify a path where the response should be written.' }],
-            isError: true
-        };
+    // Inline prompt support: when `prompt` is provided as a string, auto-persist
+    // it to a file for audit trail and continue with normal prompt_file flow.
+    // Defined-value precedence: if `prompt_file` key exists with a non-undefined value, file mode wins.
+    // This handles JSON-RPC serializers that emit `prompt_file: undefined` as "not provided".
+    // Separate intent detection (field presence) from content validation (non-empty).
+    const inlinePrompt = typeof args.prompt === 'string' ? args.prompt : undefined;
+    const hasPromptFileField = Object.prototype.hasOwnProperty.call(args, 'prompt_file') && args.prompt_file !== undefined;
+    const promptFileInput = hasPromptFileField && typeof args.prompt_file === 'string' ? args.prompt_file.trim() || undefined : undefined;
+    let resolvedPromptFile = promptFileInput;
+    let resolvedOutputFile = typeof args.output_file === 'string' ? args.output_file : undefined;
+    const hasInlineIntent = inlinePrompt !== undefined && !hasPromptFileField;
+    const isInlineMode = hasInlineIntent && inlinePrompt.trim().length > 0;
+    // Reject empty/whitespace inline prompt with explicit error BEFORE any side effects
+    if (hasInlineIntent && !inlinePrompt?.trim()) {
+        return singleErrorBlock('Inline prompt is empty. Provide a non-empty prompt string.');
     }
-    // Check if old 'prompt' parameter is used (hard error)
-    if ('prompt' in args) {
-        return {
-            content: [{ type: 'text', text: "The 'prompt' parameter has been removed. Write the prompt to a file (recommended: .omc/prompts/) and pass 'prompt_file' instead." }],
-            isError: true
-        };
+    // Reject oversized inline prompts before any persistence
+    const MAX_INLINE_PROMPT_BYTES = 256 * 1024; // 256 KB
+    if (isInlineMode && Buffer.byteLength(inlinePrompt, 'utf-8') > MAX_INLINE_PROMPT_BYTES) {
+        return singleErrorBlock(`Inline prompt exceeds maximum size (${MAX_INLINE_PROMPT_BYTES} bytes). Use prompt_file for large prompts.`);
     }
-    // Validate prompt_file is provided
-    if (!args.prompt_file || !args.prompt_file.trim()) {
-        return {
-            content: [{ type: 'text', text: 'prompt_file is required.' }],
-            isError: true
-        };
+    // Inline mode is foreground only - check BEFORE any file persistence to avoid leaks
+    if (isInlineMode && args.background) {
+        return singleErrorBlock('Inline prompt mode is foreground only. Use prompt_file for background execution.');
     }
-    // Resolve prompt from prompt_file
+    // Explicit type error for non-string prompt_file (e.g., null, number, object)
+    if (hasPromptFileField && !promptFileInput) {
+        return singleErrorBlock('prompt_file must be a non-empty string when provided. Received non-string or empty value.');
+    }
+    let inlineRequestId;
+    if (isInlineMode) {
+        inlineRequestId = generatePromptId();
+        // Auto-persist inline prompt to file
+        try {
+            const promptsDir = getPromptsDir(baseDir);
+            mkdirSync(promptsDir, { recursive: true });
+            const slug = slugify(inlinePrompt);
+            const inlinePromptPath = join(promptsDir, `gemini-inline-${slug}-${inlineRequestId}.md`);
+            writeFileSync(inlinePromptPath, inlinePrompt, { encoding: 'utf-8', mode: 0o600 });
+            const resolvedPromptFileLocal = inlinePromptPath;
+            const resolvedOutputFileLocal = (!resolvedOutputFile || !resolvedOutputFile.trim())
+                ? join(promptsDir, `gemini-inline-response-${slug}-${inlineRequestId}.md`)
+                : resolvedOutputFile;
+            resolvedPromptFile = resolvedPromptFileLocal;
+            resolvedOutputFile = resolvedOutputFileLocal;
+        }
+        catch (err) {
+            const reason = err instanceof Error ? err.message : 'unknown error';
+            return singleErrorBlock(`Failed to persist inline prompt (${reason}). Check working directory permissions and disk space.`);
+        }
+    }
+    // Validate that at least one prompt source is provided.
+    // Use type-guarded promptFileInput to avoid .trim() TypeError on non-string values.
+    const effectivePromptFile = resolvedPromptFile;
+    if (!effectivePromptFile || !effectivePromptFile.trim()) {
+        return singleErrorBlock("Either 'prompt' (inline) or 'prompt_file' (file path) is required.");
+    }
+    // Validate output_file is provided after prompt source validation.
+    // Use resolved inline/file output path to avoid args mutation.
+    const effectiveOutputFile = resolvedOutputFile;
+    if (!effectiveOutputFile || !effectiveOutputFile.trim()) {
+        return singleErrorBlock('output_file is required. Specify a path where the response should be written.');
+    }
+    // Resolve prompt from prompt_file (validated non-empty above)
     let resolvedPrompt;
-    const resolvedPath = resolve(baseDir, args.prompt_file);
+    const promptFile = effectivePromptFile;
+    const resolvedPath = resolve(baseDir, promptFile);
     const cwdReal = realpathSync(baseDir);
     const relPath = relative(cwdReal, resolvedPath);
     if (!isExternalPromptAllowed() && (relPath === '..' || relPath.startsWith('..' + sep) || isAbsolute(relPath))) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `E_PATH_OUTSIDE_WORKDIR_PROMPT: prompt_file '${args.prompt_file}' resolves outside working_directory '${baseDirReal}'.\nRequested: ${args.prompt_file}\nWorking directory: ${baseDirReal}\nResolved working directory: ${baseDirReal}\nPath policy: ${pathPolicy}\nSuggested: place the prompt file within the working directory or set working_directory to a common ancestor`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`E_PATH_OUTSIDE_WORKDIR_PROMPT: prompt_file '${promptFile}' resolves outside working_directory '${baseDirReal}'.\nRequested: ${promptFile}\nWorking directory: ${baseDirReal}\nResolved working directory: ${baseDirReal}\nPath policy: ${pathPolicy}\nSuggested: place the prompt file within the working directory or set working_directory to a common ancestor`);
     }
     // Symlink-safe check: resolve and validate BEFORE reading
     let resolvedReal;
@@ -505,37 +520,22 @@ export async function handleAskGemini(args) {
         resolvedReal = realpathSync(resolvedPath);
     }
     catch (err) {
-        return {
-            content: [{ type: 'text', text: `Failed to resolve prompt_file '${args.prompt_file}': ${err.message}` }],
-            isError: true
-        };
+        return singleErrorBlock(`Failed to resolve prompt_file '${promptFile}': ${err.message}`);
     }
     const relReal = relative(cwdReal, resolvedReal);
     if (!isExternalPromptAllowed() && (relReal === '..' || relReal.startsWith('..' + sep) || isAbsolute(relReal))) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `E_PATH_OUTSIDE_WORKDIR_PROMPT: prompt_file '${args.prompt_file}' resolves to a path outside working_directory '${baseDirReal}'.\nRequested: ${args.prompt_file}\nResolved path: ${resolvedReal}\nWorking directory: ${baseDirReal}\nResolved working directory: ${baseDirReal}\nPath policy: ${pathPolicy}\nSuggested: place the prompt file within the working directory or set working_directory to a common ancestor`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`E_PATH_OUTSIDE_WORKDIR_PROMPT: prompt_file '${promptFile}' resolves to a path outside working_directory '${baseDirReal}'.\nRequested: ${promptFile}\nResolved path: ${resolvedReal}\nWorking directory: ${baseDirReal}\nResolved working directory: ${baseDirReal}\nPath policy: ${pathPolicy}\nSuggested: place the prompt file within the working directory or set working_directory to a common ancestor`);
     }
     // Now safe to read from the validated real path
     try {
         resolvedPrompt = readFileSync(resolvedReal, 'utf-8');
     }
     catch (err) {
-        return {
-            content: [{ type: 'text', text: `Failed to read prompt_file '${args.prompt_file}': ${err.message}` }],
-            isError: true
-        };
+        return singleErrorBlock(`Failed to read prompt_file '${promptFile}': ${err.message}`);
     }
     // Check for empty prompt
     if (!resolvedPrompt.trim()) {
-        return {
-            content: [{ type: 'text', text: `prompt_file '${args.prompt_file}' is empty.` }],
-            isError: true
-        };
+        return singleErrorBlock(`prompt_file '${promptFile}' is empty.`);
     }
     // Add headless execution context so Gemini produces comprehensive output
     const userPrompt = `[HEADLESS SESSION] You are running non-interactively in a headless pipeline. Produce your FULL, comprehensive analysis directly in your response. Do NOT ask for clarification or confirmation - work thoroughly with all provided context. Do NOT write brief acknowledgments - your response IS the deliverable.
@@ -544,16 +544,10 @@ ${resolvedPrompt}`;
     // Check CLI availability
     const detection = detectGeminiCli();
     if (!detection.available) {
-        return {
-            content: [{
-                    type: 'text',
-                    text: `Gemini CLI is not available: ${detection.error}\n\n${detection.installHint}`
-                }],
-            isError: true
-        };
+        return singleErrorBlock(`Gemini CLI is not available: ${detection.error}\n\n${detection.installHint}`);
     }
     // Resolve system prompt from agent role
-    const resolvedSystemPrompt = resolveSystemPrompt(undefined, agent_role);
+    const resolvedSystemPrompt = resolveSystemPrompt(undefined, agent_role, 'gemini');
     // Build file context
     let fileContext;
     if (files && files.length > 0) {
@@ -578,10 +572,7 @@ ${resolvedPrompt}`;
     // Background mode: return immediately with job metadata
     if (args.background) {
         if (!promptResult) {
-            return {
-                content: [{ type: 'text', text: 'Failed to persist prompt for background execution' }],
-                isError: true
-            };
+            return singleErrorBlock('Failed to persist prompt for background execution');
         }
         const statusFilePath = getStatusFilePath('gemini', promptResult.slug, promptResult.id, baseDir);
         // Build fallback chain for display (executeGeminiBackground builds its own internally)
@@ -596,10 +587,7 @@ ${resolvedPrompt}`;
             responseFile: expectedResponsePath,
         }, baseDir);
         if ('error' in result) {
-            return {
-                content: [{ type: 'text', text: `Failed to spawn background job: ${result.error}` }],
-                isError: true
-            };
+            return singleErrorBlock(`Failed to spawn background job: ${result.error}`);
         }
         return {
             content: [{
@@ -626,19 +614,21 @@ ${resolvedPrompt}`;
         files?.length ? `**Files:** ${files.join(', ')}` : null,
         promptResult ? `**Prompt File:** ${promptResult.filePath}` : null,
         expectedResponsePath ? `**Response File:** ${expectedResponsePath}` : null,
+        `**Resolved Working Directory:** ${baseDirReal}`,
+        `**Path Policy:** ${pathPolicy}`,
     ].filter(Boolean).join('\n');
     // Build fallback chain using the resolver
     const fallbackChain = buildFallbackChain('gemini', resolvedModel, config.externalModels);
     let resolvedOutputPath;
-    if (args.output_file) {
-        resolvedOutputPath = resolve(baseDirReal, args.output_file);
+    if (effectiveOutputFile) {
+        resolvedOutputPath = resolve(baseDirReal, effectiveOutputFile);
     }
     const errors = [];
     for (const tryModel of fallbackChain) {
         try {
             const response = await executeGemini(fullPrompt, tryModel, baseDir);
             const usedFallback = tryModel !== resolvedModel;
-            const fallbackNote = usedFallback ? `[Fallback: used ${tryModel} instead of ${resolvedModel}]\n\n` : '';
+            const fallbackLine = usedFallback ? `Fallback: used model ${tryModel}` : undefined;
             // Persist response to disk (audit trail)
             if (promptResult) {
                 persistResponse({
@@ -654,24 +644,24 @@ ${resolvedPrompt}`;
                 });
             }
             // Always write response to output_file.
-            if (args.output_file && resolvedOutputPath) {
-                const writeResult = safeWriteOutputFile(args.output_file, response, baseDirReal, '[gemini-core]');
+            if (effectiveOutputFile && resolvedOutputPath) {
+                const writeResult = safeWriteOutputFile(effectiveOutputFile, response, baseDirReal, '[gemini-core]');
                 if (!writeResult.success) {
-                    return {
-                        content: [{
-                                type: 'text',
-                                text: `${fallbackNote}${paramLines}\n\n---\n\n${writeResult.errorMessage}\n\nresolved_working_directory: ${baseDirReal}\npath_policy: ${pathPolicy}`
-                            }],
-                        isError: true
-                    };
+                    return singleErrorBlock(`${paramLines}\n\n---\n\n${writeResult.errorMessage}\n\nresolved_working_directory: ${baseDirReal}\npath_policy: ${pathPolicy}`);
                 }
             }
-            // Build success response with metadata for path policy transparency
-            const responseLines = [
-                `${fallbackNote}${paramLines}`,
-                `**Resolved Working Directory:** ${baseDirReal}`,
-                `**Path Policy:** OMC_ALLOW_EXTERNAL_WORKDIR=${process.env.OMC_ALLOW_EXTERNAL_WORKDIR || '0 (enforced)'}`,
-            ];
+            // Build success response metadata (match Codex inline assembly pattern)
+            const responseLines = [paramLines];
+            if (fallbackLine) {
+                responseLines.push(fallbackLine);
+            }
+            // In inline mode, return metadata + raw response as separate content blocks
+            if (isInlineMode) {
+                responseLines.push(`**Request ID:** ${inlineRequestId}`);
+                const metadataText = responseLines.join('\n');
+                const wrappedResponse = wrapUntrustedCliResponse(response, { source: 'inline-cli-response', tool: 'ask_gemini' });
+                return inlineSuccessBlocks(metadataText, wrappedResponse);
+            }
             return {
                 content: [{
                         type: 'text',
@@ -685,23 +675,11 @@ ${resolvedPrompt}`;
             // Only retry on retryable errors (model not found, 429/rate limit)
             if (!/model error|model.?not.?found|model is not supported|429|rate.?limit|too many requests|quota.?exceeded|resource.?exhausted/i.test(errMsg)) {
                 // Non-retryable error — stop immediately
-                return {
-                    content: [{
-                            type: 'text',
-                            text: `${paramLines}\n\n---\n\nGemini CLI error: ${errMsg}`
-                        }],
-                    isError: true
-                };
+                return singleErrorBlock(`${paramLines}\n\n---\n\nGemini CLI error: ${errMsg}`);
             }
             // Continue to next model in chain
         }
     }
-    return {
-        content: [{
-                type: 'text',
-                text: `${paramLines}\n\n---\n\nGemini CLI error: all models in fallback chain failed.\n${errors.join('\n')}`
-            }],
-        isError: true
-    };
+    return singleErrorBlock(`${paramLines}\n\n---\n\nGemini CLI error: all models in fallback chain failed.\n${errors.join('\n')}`);
 }
 //# sourceMappingURL=gemini-core.js.map

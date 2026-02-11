@@ -8,10 +8,10 @@
  * This module provides Node.js scripts (.mjs) for cross-platform support (Windows, macOS, Linux).
  * Bash scripts were deprecated in v3.8.6 and removed in v3.9.0.
  */
-import { homedir } from "os";
 import { join, dirname } from "path";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
+import { getConfigDir } from '../utils/config-dir.js';
 // =============================================================================
 // TEMPLATE LOADER (loads hook scripts from templates/hooks/)
 // =============================================================================
@@ -72,7 +72,7 @@ export function shouldUseNodeHooks() {
 }
 /** Get the Claude config directory path (cross-platform) */
 export function getClaudeConfigDir() {
-    return join(homedir(), ".claude");
+    return getConfigDir();
 }
 /** Get the hooks directory path */
 export function getHooksDir() {

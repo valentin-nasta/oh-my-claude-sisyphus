@@ -9,7 +9,7 @@
 
 import { readFileSync, readdirSync, existsSync, openSync, closeSync, unlinkSync, writeSync, statSync, constants as fsConstants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import type { TaskFile, TaskFileUpdate, TaskFailureSidecar } from './types.js';
 import { sanitizeName } from './tmux-session.js';
 import { atomicWriteJson, validateResolvedPath, ensureDirWithMode } from './fs-utils.js';
@@ -153,8 +153,8 @@ function sanitizeTaskId(taskId: string): string {
 
 /** Paths helper */
 function tasksDir(teamName: string): string {
-  const result = join(homedir(), '.claude', 'tasks', sanitizeName(teamName));
-  validateResolvedPath(result, join(homedir(), '.claude', 'tasks'));
+  const result = join(getClaudeConfigDir(), 'tasks', sanitizeName(teamName));
+  validateResolvedPath(result, join(getClaudeConfigDir(), 'tasks'));
   return result;
 }
 

@@ -1,3 +1,27 @@
+# oh-my-claudecode v4.2.0: Notification Tagging & Config UX
+
+This release adds configurable mention/tag support for lifecycle stop-callback notifications and extends CLI configuration workflows for Telegram and Discord.
+
+### Added
+
+- `tagList` support in stop-callback config for Telegram and Discord.
+- Notification tag normalization:
+  - Telegram: normalizes usernames to `@username`
+  - Discord: supports `@here`, `@everyone`, numeric user IDs (`<@id>`), and role tags (`role:<id>` -> `<@&id>`)
+- Extended `omc config-stop-callback` options:
+  - `--tag-list <csv>`
+  - `--add-tag <tag>`
+  - `--remove-tag <tag>`
+  - `--clear-tags`
+- New CLI test coverage for tag list config mutations.
+
+### Updated
+
+- Session-end callback notifications now prefix summaries with configured tags for Telegram/Discord.
+- Documentation updated across all README locales and `docs/REFERENCE.md` with notification tag configuration examples.
+
+---
+
 # oh-my-claudecode v4.1.11: The Big Fix Release
 
 This release resolves 12 open issues in a single coordinated effort, fixing HUD rendering bugs, improving Windows compatibility, and restoring MCP agent role discovery.

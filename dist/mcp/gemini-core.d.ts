@@ -61,8 +61,9 @@ export declare function validateAndReadFile(filePath: string, baseDir?: string):
  * @returns MCP-compatible response with content array
  */
 export declare function handleAskGemini(args: {
-    prompt_file: string;
-    output_file: string;
+    prompt?: string;
+    prompt_file?: string;
+    output_file?: string;
     agent_role: string;
     model?: string;
     files?: string[];

@@ -11,9 +11,9 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
 import { execSync } from 'child_process';
 import { install as installSisyphus, HOOKS_DIR, isProjectScopedPlugin, isRunningAsPlugin } from '../installer/index.js';
+import { getConfigDir } from '../utils/config-dir.js';
 /** GitHub repository information */
 export const REPO_OWNER = 'Yeachan-Heo';
 export const REPO_NAME = 'oh-my-claudecode';
@@ -26,7 +26,7 @@ export const GITHUB_RAW_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/$
  * and cache rebuilds reinstall old versions. (See #506)
  */
 function syncMarketplaceClone(verbose = false) {
-    const marketplacePath = join(homedir(), '.claude', 'plugins', 'marketplaces', 'omc');
+    const marketplacePath = join(getConfigDir(), 'plugins', 'marketplaces', 'omc');
     if (!existsSync(marketplacePath)) {
         return { ok: true, message: 'Marketplace clone not found; skipping' };
     }
@@ -52,7 +52,7 @@ function syncMarketplaceClone(verbose = false) {
     return { ok: true, message: 'Marketplace clone updated' };
 }
 /** Installation paths */
-export const CLAUDE_CONFIG_DIR = join(homedir(), '.claude');
+export const CLAUDE_CONFIG_DIR = getConfigDir();
 export const VERSION_FILE = join(CLAUDE_CONFIG_DIR, '.omc-version.json');
 export const CONFIG_FILE = join(CLAUDE_CONFIG_DIR, '.omc-config.json');
 /**
@@ -106,7 +106,7 @@ export function isEcomodeEnabled() {
  */
 export function isTeamEnabled() {
     try {
-        const settingsPath = join(homedir(), '.claude', 'settings.json');
+        const settingsPath = join(CLAUDE_CONFIG_DIR, 'settings.json');
         if (existsSync(settingsPath)) {
             const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
             const val = settings.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;

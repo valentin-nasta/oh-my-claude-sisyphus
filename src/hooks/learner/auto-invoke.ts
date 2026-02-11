@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { atomicWriteJson } from '../../lib/atomic-write.js';
 
 export interface InvocationConfig {
@@ -38,7 +39,7 @@ const DEFAULT_CONFIG: InvocationConfig = {
  * Load auto-invocation config from ~/.claude/.omc-config.json
  */
 export function loadInvocationConfig(): InvocationConfig {
-  const configPath = path.join(os.homedir(), '.claude', '.omc-config.json');
+  const configPath = path.join(getClaudeConfigDir(), '.omc-config.json');
 
   try {
     if (!fs.existsSync(configPath)) {

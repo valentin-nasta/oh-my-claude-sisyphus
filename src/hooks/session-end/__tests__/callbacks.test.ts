@@ -250,6 +250,33 @@ describe('triggerStopCallbacks', () => {
     );
   });
 
+  it('prefixes Telegram messages with normalized tags from tagList', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('OK'),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    mockGetConfig.mockReturnValue({
+      silentAutoUpdate: false,
+      stopHookCallbacks: {
+        telegram: {
+          enabled: true,
+          botToken: '123456789:ABCdefGHIjklMNOpqrSTUvwxyz012345678',
+          chatId: '12345',
+          tagList: ['@alice', 'bob', '  ', '', 'charlie'],
+        },
+      },
+    });
+
+    const metrics = createTestMetrics();
+    await triggerStopCallbacks(metrics, testInput);
+
+    const request = mockFetch.mock.calls[0]?.[1] as { body: string };
+    const payload = JSON.parse(request.body) as { text: string };
+    expect(payload.text.startsWith('@alice @bob @charlie\n# Session Ended')).toBe(true);
+  });
+
   it('skips Telegram when missing credentials', async () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
@@ -297,6 +324,32 @@ describe('triggerStopCallbacks', () => {
         body: expect.stringContaining('test-session-123'),
       })
     );
+  });
+
+  it('prefixes Discord messages with normalized tags from tagList', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('OK'),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    mockGetConfig.mockReturnValue({
+      silentAutoUpdate: false,
+      stopHookCallbacks: {
+        discord: {
+          enabled: true,
+          webhookUrl: 'https://discord.com/api/webhooks/test',
+          tagList: ['@here', '@everyone', 'role:123', '456', 'dev-team', '  ', ''],
+        },
+      },
+    });
+
+    const metrics = createTestMetrics();
+    await triggerStopCallbacks(metrics, testInput);
+
+    const request = mockFetch.mock.calls[0]?.[1] as { body: string };
+    const payload = JSON.parse(request.body) as { content: string };
+    expect(payload.content.startsWith('@here @everyone <@&123> <@456> dev-team\n# Session Ended')).toBe(true);
   });
 
   it('skips Discord when missing webhook URL', async () => {

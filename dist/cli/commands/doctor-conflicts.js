@@ -3,15 +3,15 @@
  * Scans for and reports plugin coexistence issues.
  */
 import { readFileSync, existsSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { colors } from '../utils/formatting.js';
 /**
  * Check for hook conflicts in ~/.claude/settings.json
  */
 export function checkHookConflicts() {
     const conflicts = [];
-    const settingsPath = join(homedir(), '.claude', 'settings.json');
+    const settingsPath = join(getClaudeConfigDir(), 'settings.json');
     if (!existsSync(settingsPath)) {
         return conflicts;
     }
@@ -53,7 +53,7 @@ export function checkHookConflicts() {
  * Check CLAUDE.md for OMC markers and user content
  */
 export function checkClaudeMdStatus() {
-    const claudeMdPath = join(homedir(), '.claude', 'CLAUDE.md');
+    const claudeMdPath = join(getClaudeConfigDir(), 'CLAUDE.md');
     if (!existsSync(claudeMdPath)) {
         return null;
     }
@@ -101,7 +101,7 @@ export function checkEnvFlags() {
  */
 export function checkConfigIssues() {
     const unknownFields = [];
-    const configPath = join(homedir(), '.claude', '.omc-config.json');
+    const configPath = join(getClaudeConfigDir(), '.omc-config.json');
     if (!existsSync(configPath)) {
         return { unknownFields };
     }

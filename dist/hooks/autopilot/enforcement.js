@@ -8,7 +8,7 @@
  */
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { OmcPaths } from '../../lib/worktree-paths.js';
 import { readAutopilotState, writeAutopilotState, transitionPhase, transitionRalphToUltraQA, transitionUltraQAToValidation, transitionToComplete } from './state.js';
 import { getPhasePrompt } from './prompts.js';
@@ -33,7 +33,7 @@ const SIGNAL_PATTERNS = {
  * Detect a specific signal in the session transcript
  */
 export function detectSignal(sessionId, signal) {
-    const claudeDir = join(homedir(), '.claude');
+    const claudeDir = getClaudeConfigDir();
     const possiblePaths = [
         join(claudeDir, 'sessions', sessionId, 'transcript.md'),
         join(claudeDir, 'sessions', sessionId, 'messages.json'),

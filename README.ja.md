@@ -137,6 +137,26 @@ omc wait --stop   # デーモンを無効化
 
 **必要なもの:** tmux (セッション検出用)
 
+### 通知タグ設定 (Telegram/Discord)
+
+stop コールバックがセッション要約を送るときに、誰をタグ付けするか設定できます。
+
+```bash
+# タグ一覧を設定/置換
+omc config-stop-callback telegram --enable --token <bot_token> --chat <chat_id> --tag-list "@alice,bob"
+omc config-stop-callback discord --enable --webhook <url> --tag-list "@here,123456789012345678,role:987654321098765432"
+
+# 追加・削除・クリア
+omc config-stop-callback telegram --add-tag charlie
+omc config-stop-callback discord --remove-tag @here
+omc config-stop-callback discord --clear-tags
+```
+
+タグの挙動:
+- Telegram: `alice` は `@alice` に正規化
+- Discord: `@here`、`@everyone`、数値ユーザーID、`role:<id>` をサポート
+- `file` コールバックはタグオプションを無視
+
 ---
 
 ## ドキュメント

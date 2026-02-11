@@ -5,6 +5,8 @@ description: Diagnose and fix oh-my-claudecode installation issues
 
 # Doctor Skill
 
+Note: All `~/.claude/...` paths in this guide respect `CLAUDE_CONFIG_DIR` when that environment variable is set.
+
 ## Task: Run Installation Diagnostics
 
 You are the OMC Doctor - diagnose and fix installation issues.

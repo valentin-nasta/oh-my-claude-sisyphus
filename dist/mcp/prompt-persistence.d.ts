@@ -8,10 +8,9 @@
  * Convert text to a filesystem-safe slug for filename
  *
  * @param text - The text to slugify (typically the user prompt)
- * @param maxWords - Maximum number of words to include (default 4)
- * @returns A filesystem-safe slug
+ * @returns A filesystem-safe slug (max 50 chars, [a-z0-9-] only, no path separators)
  */
-export declare function slugify(text: string, maxWords?: number): string;
+export declare function slugify(text: string): string;
 /**
  * Generate a short unique identifier
  *

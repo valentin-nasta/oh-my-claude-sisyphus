@@ -24,7 +24,7 @@ function debugLog(message, ...args) {
 }
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 /**
  * Validates that a session ID is safe to use in file paths.
  * Session IDs should be alphanumeric with optional hyphens and underscores.
@@ -102,7 +102,7 @@ export function isContextLimitStop(context) {
  * Get possible todo file locations
  */
 function getTodoFilePaths(sessionId, directory) {
-    const claudeDir = join(homedir(), '.claude');
+    const claudeDir = getClaudeConfigDir();
     const paths = [];
     // Session-specific todos
     if (sessionId) {
@@ -165,7 +165,7 @@ export function getTaskDirectory(sessionId) {
     if (!isValidSessionId(sessionId)) {
         return ''; // Return empty string for invalid sessions
     }
-    return join(homedir(), '.claude', 'tasks', sessionId);
+    return join(getClaudeConfigDir(), 'tasks', sessionId);
 }
 /**
  * Validates that a parsed JSON object is a valid Task.

@@ -137,6 +137,26 @@ omc wait --stop   # 데몬 비활성화
 
 **요구사항:** tmux (세션 감지용)
 
+### 알림 태그 설정 (Telegram/Discord)
+
+stop 콜백이 세션 요약을 보낼 때 태그할 대상을 설정할 수 있습니다.
+
+```bash
+# 태그 목록 설정/교체
+omc config-stop-callback telegram --enable --token <bot_token> --chat <chat_id> --tag-list "@alice,bob"
+omc config-stop-callback discord --enable --webhook <url> --tag-list "@here,123456789012345678,role:987654321098765432"
+
+# 점진적 수정
+omc config-stop-callback telegram --add-tag charlie
+omc config-stop-callback discord --remove-tag @here
+omc config-stop-callback discord --clear-tags
+```
+
+태그 동작:
+- Telegram: `alice`는 `@alice`로 정규화됩니다
+- Discord: `@here`, `@everyone`, 숫자 사용자 ID, `role:<id>` 지원
+- `file` 콜백은 태그 옵션을 무시합니다
+
 ---
 
 ## 문서

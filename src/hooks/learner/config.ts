@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { DEBUG_ENABLED } from './constants.js';
 
 export interface LearnerConfig {
@@ -60,7 +60,7 @@ const DEFAULT_CONFIG: LearnerConfig = {
   },
 };
 
-const CONFIG_PATH = join(homedir(), '.claude', 'omc', 'learner.json');
+const CONFIG_PATH = join(getClaudeConfigDir(), 'omc', 'learner.json');
 
 /**
  * Load configuration from disk.
@@ -89,7 +89,7 @@ export function saveConfig(config: Partial<LearnerConfig>): boolean {
   const merged = mergeConfig(DEFAULT_CONFIG, config);
 
   try {
-    const dir = join(homedir(), '.claude', 'omc');
+    const dir = join(getClaudeConfigDir(), 'omc');
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }

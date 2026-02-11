@@ -9,7 +9,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import type { McpWorkerMember, ConfigProbeResult } from './types.js';
 import { sanitizeName } from './tmux-session.js';
 import { atomicWriteJson, validateResolvedPath } from './fs-utils.js';
@@ -17,8 +17,8 @@ import { atomicWriteJson, validateResolvedPath } from './fs-utils.js';
 // --- Config paths ---
 
 function configPath(teamName: string): string {
-  const result = join(homedir(), '.claude', 'teams', sanitizeName(teamName), 'config.json');
-  validateResolvedPath(result, join(homedir(), '.claude', 'teams'));
+  const result = join(getClaudeConfigDir(), 'teams', sanitizeName(teamName), 'config.json');
+  validateResolvedPath(result, join(getClaudeConfigDir(), 'teams'));
   return result;
 }
 

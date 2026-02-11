@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { OmcPaths } from '../../lib/worktree-paths.js';
 import {
   readAutopilotState,
@@ -63,7 +63,7 @@ const SIGNAL_PATTERNS: Record<AutopilotSignal, RegExp> = {
  * Detect a specific signal in the session transcript
  */
 export function detectSignal(sessionId: string, signal: AutopilotSignal): boolean {
-  const claudeDir = join(homedir(), '.claude');
+  const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
     join(claudeDir, 'sessions', sessionId, 'transcript.md'),
     join(claudeDir, 'sessions', sessionId, 'messages.json'),

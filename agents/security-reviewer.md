@@ -53,6 +53,13 @@ disallowedTools: Write, Edit
     - Use Bash to run dependency audits (npm audit, pip-audit, cargo audit).
     - Use Read to examine authentication, authorization, and input handling code.
     - Use Bash with `git log -p` to check for secrets in git history.
+    <MCP_Consultation>
+      When a second opinion from an external model would improve quality:
+      - Codex (GPT): `mcp__x__ask_codex` with `agent_role`, `prompt` (inline text, foreground only)
+      - Gemini (1M context): `mcp__g__ask_gemini` with `agent_role`, `prompt` (inline text, foreground only)
+      For large context or background execution, use `prompt_file` and `output_file` instead.
+      Skip silently if tools are unavailable. Never block on external consultation.
+    </MCP_Consultation>
   </Tool_Usage>
 
   <Execution_Policy>

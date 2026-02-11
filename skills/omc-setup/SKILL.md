@@ -7,6 +7,8 @@ description: Setup and configure oh-my-claudecode (the ONLY command you need to 
 
 This is the **only command you need to learn**. After running this, everything else is automatic.
 
+Note: All `~/.claude/...` paths in this guide respect `CLAUDE_CONFIG_DIR` when that environment variable is set.
+
 ## Pre-Setup Check: Already Configured?
 
 **CRITICAL**: Before doing anything else, check if setup has already been completed. This prevents users from having to re-run the full setup wizard after every update.

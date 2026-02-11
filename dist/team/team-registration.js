@@ -7,13 +7,13 @@
  */
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { sanitizeName } from './tmux-session.js';
 import { atomicWriteJson, validateResolvedPath } from './fs-utils.js';
 // --- Config paths ---
 function configPath(teamName) {
-    const result = join(homedir(), '.claude', 'teams', sanitizeName(teamName), 'config.json');
-    validateResolvedPath(result, join(homedir(), '.claude', 'teams'));
+    const result = join(getClaudeConfigDir(), 'teams', sanitizeName(teamName), 'config.json');
+    validateResolvedPath(result, join(getClaudeConfigDir(), 'teams'));
     return result;
 }
 function shadowRegistryPath(workingDirectory) {

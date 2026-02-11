@@ -137,6 +137,26 @@ omc wait --stop   # 禁用守护进程
 
 **需要：** tmux（用于会话检测）
 
+### 通知标签配置 (Telegram/Discord)
+
+你可以配置 stop 回调发送会话摘要时要 @ 谁。
+
+```bash
+# 设置/替换标签列表
+omc config-stop-callback telegram --enable --token <bot_token> --chat <chat_id> --tag-list "@alice,bob"
+omc config-stop-callback discord --enable --webhook <url> --tag-list "@here,123456789012345678,role:987654321098765432"
+
+# 增量更新
+omc config-stop-callback telegram --add-tag charlie
+omc config-stop-callback discord --remove-tag @here
+omc config-stop-callback discord --clear-tags
+```
+
+标签规则：
+- Telegram：`alice` 会规范化为 `@alice`
+- Discord：支持 `@here`、`@everyone`、纯数字用户 ID、`role:<id>`
+- `file` 回调会忽略标签选项
+
 ---
 
 ## 文档

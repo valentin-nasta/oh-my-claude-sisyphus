@@ -10,7 +10,7 @@
 
 import * as path from 'path';
 import { execSync } from 'child_process';
-import * as os from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { existsSync, readFileSync } from 'fs';
 import {
   HOOK_NAME,
@@ -68,7 +68,7 @@ function getEnforcementLevel(directory: string): EnforcementLevel {
   }
 
   const localConfig = path.join(directory, '.omc', 'config.json');
-  const globalConfig = path.join(os.homedir(), '.claude', '.omc-config.json');
+  const globalConfig = path.join(getClaudeConfigDir(), '.omc-config.json');
 
   let level: EnforcementLevel = 'warn'; // Default
 

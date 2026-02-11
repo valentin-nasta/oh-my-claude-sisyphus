@@ -14,8 +14,9 @@ import { homedir } from 'os';
 import { execSync } from 'child_process';
 import { getHookScripts, getHooksSettingsConfig, isWindows, MIN_NODE_VERSION } from './hooks.js';
 import { getRuntimePackageVersion } from '../lib/version.js';
+import { getConfigDir } from '../utils/config-dir.js';
 /** Claude Code configuration directory */
-export const CLAUDE_CONFIG_DIR = join(homedir(), '.claude');
+export const CLAUDE_CONFIG_DIR = getConfigDir();
 export const AGENTS_DIR = join(CLAUDE_CONFIG_DIR, 'agents');
 export const COMMANDS_DIR = join(CLAUDE_CONFIG_DIR, 'commands');
 export const SKILLS_DIR = join(CLAUDE_CONFIG_DIR, 'skills');
@@ -138,7 +139,7 @@ export function isProjectScopedPlugin() {
         return false;
     }
     // Global plugins are installed under ~/.claude/plugins/
-    const globalPluginBase = join(homedir(), '.claude', 'plugins');
+    const globalPluginBase = join(CLAUDE_CONFIG_DIR, 'plugins');
     // If the plugin root is NOT under the global plugin directory, it's project-scoped
     // Normalize paths for comparison (resolve symlinks, trailing slashes, etc.)
     const normalizedPluginRoot = pluginRoot.replace(/\\/g, '/').replace(/\/$/, '');

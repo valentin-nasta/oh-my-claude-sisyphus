@@ -34,11 +34,12 @@ const debugLog = (...args) => {
 };
 
 // State file for session tracking
-const STATE_FILE = join(homedir(), '.claude', '.session-stats.json');
+const cfgDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+const STATE_FILE = join(cfgDir, '.session-stats.json');
 
 // Ensure state directory exists
 try {
-  const stateDir = join(homedir(), '.claude');
+  const stateDir = cfgDir;
   if (!existsSync(stateDir)) {
     mkdirSync(stateDir, { recursive: true });
   }
@@ -94,7 +95,7 @@ function updateStats(toolName, sessionId) {
 // Read bash history config (default: enabled)
 function getBashHistoryConfig() {
   try {
-    const configPath = join(homedir(), '.claude', '.omc-config.json');
+    const configPath = join(cfgDir, '.omc-config.json');
     if (existsSync(configPath)) {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
       if (config.bashHistory === false) return false;

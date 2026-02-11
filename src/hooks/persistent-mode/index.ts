@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import {
   readUltraworkState,
   incrementReinforcement,
@@ -192,7 +192,7 @@ export function resetTodoContinuationAttempts(sessionId: string): void {
  * Check for architect approval in session transcript
  */
 function checkArchitectApprovalInTranscript(sessionId: string): boolean {
-  const claudeDir = join(homedir(), '.claude');
+  const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
     join(claudeDir, 'sessions', sessionId, 'transcript.md'),
     join(claudeDir, 'sessions', sessionId, 'messages.json'),
@@ -218,7 +218,7 @@ function checkArchitectApprovalInTranscript(sessionId: string): boolean {
  * Check for architect rejection in session transcript
  */
 function checkArchitectRejectionInTranscript(sessionId: string): { rejected: boolean; feedback: string } {
-  const claudeDir = join(homedir(), '.claude');
+  const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
     join(claudeDir, 'sessions', sessionId, 'transcript.md'),
     join(claudeDir, 'sessions', sessionId, 'messages.json'),

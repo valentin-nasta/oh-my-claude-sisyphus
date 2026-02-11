@@ -4,8 +4,8 @@
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import type { PluginConfig } from '../../shared/types.js';
 import { colors } from '../utils/formatting.js';
 
@@ -22,7 +22,7 @@ export interface ConflictReport {
  */
 export function checkHookConflicts(): ConflictReport['hookConflicts'] {
   const conflicts: ConflictReport['hookConflicts'] = [];
-  const settingsPath = join(homedir(), '.claude', 'settings.json');
+  const settingsPath = join(getClaudeConfigDir(), 'settings.json');
 
   if (!existsSync(settingsPath)) {
     return conflicts;
@@ -68,7 +68,7 @@ export function checkHookConflicts(): ConflictReport['hookConflicts'] {
  * Check CLAUDE.md for OMC markers and user content
  */
 export function checkClaudeMdStatus(): ConflictReport['claudeMdStatus'] {
-  const claudeMdPath = join(homedir(), '.claude', 'CLAUDE.md');
+  const claudeMdPath = join(getClaudeConfigDir(), 'CLAUDE.md');
 
   if (!existsSync(claudeMdPath)) {
     return null;
@@ -125,7 +125,7 @@ export function checkEnvFlags(): ConflictReport['envFlags'] {
  */
 export function checkConfigIssues(): ConflictReport['configIssues'] {
   const unknownFields: string[] = [];
-  const configPath = join(homedir(), '.claude', '.omc-config.json');
+  const configPath = join(getClaudeConfigDir(), '.omc-config.json');
 
   if (!existsSync(configPath)) {
     return { unknownFields };

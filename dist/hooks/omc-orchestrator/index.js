@@ -9,7 +9,7 @@
  */
 import * as path from 'path';
 import { execSync } from 'child_process';
-import * as os from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { existsSync, readFileSync } from 'fs';
 import { HOOK_NAME, ALLOWED_PATH_PATTERNS, WARNED_EXTENSIONS, WRITE_EDIT_TOOLS, DIRECT_WORK_REMINDER, ORCHESTRATOR_DELEGATION_REQUIRED, BOULDER_CONTINUATION_PROMPT, VERIFICATION_REMINDER, SINGLE_TASK_DIRECTIVE, } from './constants.js';
 import { readBoulderState, getPlanProgress, } from '../../features/boulder-state/index.js';
@@ -42,7 +42,7 @@ function getEnforcementLevel(directory) {
         return enforcementCache.level;
     }
     const localConfig = path.join(directory, '.omc', 'config.json');
-    const globalConfig = path.join(os.homedir(), '.claude', '.omc-config.json');
+    const globalConfig = path.join(getClaudeConfigDir(), '.omc-config.json');
     let level = 'warn'; // Default
     for (const configPath of [localConfig, globalConfig]) {
         if (existsSync(configPath)) {

@@ -7,10 +7,10 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { resolveLiveData } from './live-data.js';
 /** Claude config directory */
-const CLAUDE_CONFIG_DIR = join(homedir(), '.claude');
+const CLAUDE_CONFIG_DIR = getClaudeConfigDir();
 /**
  * Parse YAML-like frontmatter from markdown file
  * Simple implementation - supports basic key: value format
@@ -185,7 +185,7 @@ export function executeSlashCommand(parsed) {
     if (!command) {
         return {
             success: false,
-            error: `Command "/${parsed.command}" not found. Available commands are in ~/.claude/commands/ or .claude/commands/`,
+            error: `Command "/${parsed.command}" not found. Available commands are in $CLAUDE_CONFIG_DIR/commands/ (or ~/.claude/commands/ by default) or .claude/commands/`,
         };
     }
     try {

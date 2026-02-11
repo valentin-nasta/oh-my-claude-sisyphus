@@ -38,6 +38,8 @@ export interface StopCallbackTelegramConfig {
     botToken?: string;
     /** Chat ID to send messages to */
     chatId?: string;
+    /** Optional tags/usernames to prefix in notifications */
+    tagList?: string[];
 }
 /**
  * Stop hook callback configuration for Discord
@@ -46,6 +48,8 @@ export interface StopCallbackDiscordConfig {
     enabled: boolean;
     /** Discord webhook URL */
     webhookUrl?: string;
+    /** Optional tags/user IDs/roles to prefix in notifications */
+    tagList?: string[];
 }
 /**
  * Stop hook callbacks configuration

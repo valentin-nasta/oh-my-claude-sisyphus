@@ -6,7 +6,7 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { DEFAULT_HUD_CONFIG, PRESET_CONFIGS } from './types.js';
 import { cleanupStaleBackgroundTasks, markOrphanedTasksAsStale } from './background-cleanup.js';
 // ============================================================================
@@ -24,13 +24,13 @@ function getLocalStateFilePath(directory) {
  * Get Claude Code settings.json path
  */
 function getSettingsFilePath() {
-    return join(homedir(), '.claude', 'settings.json');
+    return join(getClaudeConfigDir(), 'settings.json');
 }
 /**
  * Get the HUD config file path (legacy)
  */
 function getConfigFilePath() {
-    return join(homedir(), '.claude', '.omc', 'hud-config.json');
+    return join(getClaudeConfigDir(), '.omc', 'hud-config.json');
 }
 /**
  * Ensure the .omc/state directory exists

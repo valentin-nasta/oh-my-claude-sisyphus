@@ -9,6 +9,8 @@ scope: ~/.claude/**  # DOCUMENTATION ONLY - Allowed write scope
 
 Configure the OMC HUD (Heads-Up Display) for the statusline.
 
+Note: All `~/.claude/...` paths in this guide respect `CLAUDE_CONFIG_DIR` when that environment variable is set.
+
 ## Quick Commands
 
 | Command | Description |

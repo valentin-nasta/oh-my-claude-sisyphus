@@ -11,7 +11,7 @@
  */
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../../utils/paths.js';
 import { readUltraworkState, incrementReinforcement, deactivateUltrawork, getUltraworkPersistenceMessage } from '../ultrawork/index.js';
 import { readRalphState, incrementRalphIteration, clearRalphState, getPrdCompletionStatus, getRalphContext, readVerificationState, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState } from '../ralph/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop } from '../todo-continuation/index.js';
@@ -126,7 +126,7 @@ export function resetTodoContinuationAttempts(sessionId) {
  * Check for architect approval in session transcript
  */
 function checkArchitectApprovalInTranscript(sessionId) {
-    const claudeDir = join(homedir(), '.claude');
+    const claudeDir = getClaudeConfigDir();
     const possiblePaths = [
         join(claudeDir, 'sessions', sessionId, 'transcript.md'),
         join(claudeDir, 'sessions', sessionId, 'messages.json'),
@@ -151,7 +151,7 @@ function checkArchitectApprovalInTranscript(sessionId) {
  * Check for architect rejection in session transcript
  */
 function checkArchitectRejectionInTranscript(sessionId) {
-    const claudeDir = join(homedir(), '.claude');
+    const claudeDir = getClaudeConfigDir();
     const possiblePaths = [
         join(claudeDir, 'sessions', sessionId, 'transcript.md'),
         join(claudeDir, 'sessions', sessionId, 'messages.json'),

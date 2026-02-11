@@ -58,24 +58,25 @@ describe('bridge-entry security', () => {
 });
 describe('validateConfigPath', () => {
     const home = '/home/user';
+    const claudeConfigDir = '/home/user/.claude';
     it('should reject paths outside home directory', () => {
-        expect(validateConfigPath('/tmp/.omc/config.json', home)).toBe(false);
+        expect(validateConfigPath('/tmp/.omc/config.json', home, claudeConfigDir)).toBe(false);
     });
     it('should reject paths without trusted subpath', () => {
-        expect(validateConfigPath('/home/user/project/config.json', home)).toBe(false);
+        expect(validateConfigPath('/home/user/project/config.json', home, claudeConfigDir)).toBe(false);
     });
     it('should accept paths under ~/.claude/', () => {
-        expect(validateConfigPath('/home/user/.claude/teams/foo/config.json', home)).toBe(true);
+        expect(validateConfigPath('/home/user/.claude/teams/foo/config.json', home, claudeConfigDir)).toBe(true);
     });
     it('should accept paths under project/.omc/', () => {
-        expect(validateConfigPath('/home/user/project/.omc/state/config.json', home)).toBe(true);
+        expect(validateConfigPath('/home/user/project/.omc/state/config.json', home, claudeConfigDir)).toBe(true);
     });
     it('should reject path that matches subpath but not home', () => {
-        expect(validateConfigPath('/other/.claude/config.json', home)).toBe(false);
+        expect(validateConfigPath('/other/.claude/config.json', home, claudeConfigDir)).toBe(false);
     });
     it('should reject path traversal via ../ that escapes trusted subpath', () => {
         // ~/foo/.claude/../../evil.json resolves to ~/evil.json (no trusted subpath)
-        expect(validateConfigPath('/home/user/foo/.claude/../../evil.json', home)).toBe(false);
+        expect(validateConfigPath('/home/user/foo/.claude/../../evil.json', home, claudeConfigDir)).toBe(false);
     });
 });
 //# sourceMappingURL=bridge-entry.test.js.map

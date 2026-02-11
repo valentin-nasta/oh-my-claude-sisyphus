@@ -12,7 +12,8 @@
  */
 export declare function toForwardSlash(path: string): string;
 /**
- * Get Claude config directory path
+ * Get Claude config directory path.
+ * Respects the CLAUDE_CONFIG_DIR environment variable when set.
  */
 export declare function getClaudeConfigDir(): string;
 /**

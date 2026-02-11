@@ -96,7 +96,7 @@ export const VALID_AGENT_ROLES = getValidAgentRoles();
  *
  * Returns undefined if neither is provided or resolution fails.
  */
-export function resolveSystemPrompt(systemPrompt, agentRole) {
+export function resolveSystemPrompt(systemPrompt, agentRole, provider) {
     // Explicit system_prompt takes precedence
     if (systemPrompt && systemPrompt.trim()) {
         return systemPrompt.trim();
@@ -105,7 +105,7 @@ export function resolveSystemPrompt(systemPrompt, agentRole) {
     if (agentRole && agentRole.trim()) {
         const role = agentRole.trim();
         // loadAgentPrompt already validates the name and handles errors gracefully
-        const prompt = loadAgentPrompt(role);
+        const prompt = loadAgentPrompt(role, provider);
         // loadAgentPrompt returns "Agent: {name}\n\nPrompt unavailable." on failure
         if (prompt.includes('Prompt unavailable')) {
             console.warn(`[prompt-injection] Agent role "${role}" prompt not found, skipping injection`);
@@ -121,6 +121,25 @@ export function resolveSystemPrompt(systemPrompt, agentRole) {
  */
 export function wrapUntrustedFileContent(filepath, content) {
     return `\n--- UNTRUSTED FILE CONTENT (${filepath}) ---\n${content}\n--- END UNTRUSTED FILE CONTENT ---\n`;
+}
+/**
+ * Wrap CLI response content with untrusted delimiters to prevent prompt injection.
+ * Used for inline CLI responses that are returned directly to the caller.
+ */
+export function wrapUntrustedCliResponse(content, metadata) {
+    return `\n--- UNTRUSTED CLI RESPONSE (${metadata.tool}:${metadata.source}) ---\n${content}\n--- END UNTRUSTED CLI RESPONSE ---\n`;
+}
+export function singleErrorBlock(text) {
+    return { content: [{ type: 'text', text }], isError: true };
+}
+export function inlineSuccessBlocks(metadataText, wrappedResponse) {
+    return {
+        content: [
+            { type: 'text', text: metadataText },
+            { type: 'text', text: wrappedResponse },
+        ],
+        isError: false,
+    };
 }
 /**
  * Build the full prompt with system prompt prepended.

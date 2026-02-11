@@ -9,6 +9,7 @@ import { readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { loadAgentPrompt } from '../agents/utils.js';
+import type { ExternalModelProvider } from '../shared/types.js';
 
 /**
  * Build-time injected agent roles list.
@@ -117,7 +118,8 @@ export type AgentRole = string;
  */
 export function resolveSystemPrompt(
   systemPrompt?: string,
-  agentRole?: string
+  agentRole?: string,
+  provider?: ExternalModelProvider
 ): string | undefined {
   // Explicit system_prompt takes precedence
   if (systemPrompt && systemPrompt.trim()) {
@@ -128,7 +130,7 @@ export function resolveSystemPrompt(
   if (agentRole && agentRole.trim()) {
     const role = agentRole.trim();
     // loadAgentPrompt already validates the name and handles errors gracefully
-    const prompt = loadAgentPrompt(role);
+    const prompt = loadAgentPrompt(role, provider);
     // loadAgentPrompt returns "Agent: {name}\n\nPrompt unavailable." on failure
     if (prompt.includes('Prompt unavailable')) {
       console.warn(`[prompt-injection] Agent role "${role}" prompt not found, skipping injection`);
@@ -146,6 +148,28 @@ export function resolveSystemPrompt(
  */
 export function wrapUntrustedFileContent(filepath: string, content: string): string {
   return `\n--- UNTRUSTED FILE CONTENT (${filepath}) ---\n${content}\n--- END UNTRUSTED FILE CONTENT ---\n`;
+}
+
+/**
+ * Wrap CLI response content with untrusted delimiters to prevent prompt injection.
+ * Used for inline CLI responses that are returned directly to the caller.
+ */
+export function wrapUntrustedCliResponse(content: string, metadata: { source: string; tool: string }): string {
+  return `\n--- UNTRUSTED CLI RESPONSE (${metadata.tool}:${metadata.source}) ---\n${content}\n--- END UNTRUSTED CLI RESPONSE ---\n`;
+}
+
+export function singleErrorBlock(text: string): { content: [{ type: 'text'; text: string }]; isError: true } {
+  return { content: [{ type: 'text' as const, text }], isError: true as const };
+}
+
+export function inlineSuccessBlocks(metadataText: string, wrappedResponse: string): { content: [{ type: 'text'; text: string }, { type: 'text'; text: string }]; isError: false } {
+  return {
+    content: [
+      { type: 'text' as const, text: metadataText },
+      { type: 'text' as const, text: wrappedResponse },
+    ],
+    isError: false as const,
+  };
 }
 
 /**

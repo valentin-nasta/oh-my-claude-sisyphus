@@ -13,19 +13,26 @@ import { runBridge } from './mcp-team-bridge.js';
 import { deleteHeartbeat } from './heartbeat.js';
 import { unregisterMcpWorker } from './team-registration.js';
 import { getWorktreeRoot } from '../lib/worktree-paths.js';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { sanitizeName } from './tmux-session.js';
 
 /**
  * Validate that a config path is under the user's home directory
- * and contains a trusted subpath (/.claude/ or /.omc/).
+ * and contains a trusted subpath (Claude config dir or ~/.omc/).
  * Resolves the path first to defeat traversal attacks like ~/foo/.claude/../../evil.json.
  */
-export function validateConfigPath(configPath: string, homeDir: string): boolean {
+export function validateConfigPath(configPath: string, homeDir: string, claudeConfigDir: string): boolean {
   // Resolve to canonical absolute path to defeat ".." traversal
   const resolved = resolve(configPath);
 
   const isUnderHome = resolved.startsWith(homeDir + '/') || resolved === homeDir;
-  const isTrustedSubpath = resolved.includes('/.claude/') || resolved.includes('/.omc/');
+  const normalizedConfigDir = resolve(claudeConfigDir);
+  const normalizedOmcDir = resolve(homeDir, '.omc');
+  const isTrustedSubpath =
+    resolved === normalizedConfigDir ||
+    resolved.startsWith(normalizedConfigDir + '/') ||
+    resolved === normalizedOmcDir ||
+    resolved.startsWith(normalizedOmcDir + '/');
   if (!isUnderHome || !isTrustedSubpath) return false;
 
   // Additionally verify via realpathSync on the parent directory (if it exists)
@@ -87,8 +94,9 @@ function main(): void {
 
   // Validate config path is from a trusted location
   const home = homedir();
-  if (!validateConfigPath(configPath, home)) {
-    console.error(`Config path must be under ~/ with .claude/ or .omc/ subpath: ${configPath}`);
+  const claudeConfigDir = getClaudeConfigDir();
+  if (!validateConfigPath(configPath, home, claudeConfigDir)) {
+    console.error(`Config path must be under ~/ with ${claudeConfigDir} or ~/.omc/ subpath: ${configPath}`);
     process.exit(1);
   }
 

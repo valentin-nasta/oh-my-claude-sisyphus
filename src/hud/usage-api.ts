@@ -13,7 +13,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 import { join, dirname } from 'path';
 import { execSync } from 'child_process';
 import https from 'https';
@@ -72,7 +72,7 @@ interface ZaiQuotaResponse {
  * Get the cache file path
  */
 function getCachePath(): string {
-  return join(homedir(), '.claude/plugins/oh-my-claudecode/.usage-cache.json');
+  return join(getClaudeConfigDir(), 'plugins/oh-my-claudecode/.usage-cache.json');
 }
 
 /**
@@ -182,7 +182,7 @@ function readKeychainCredentials(): OAuthCredentials | null {
  */
 function readFileCredentials(): OAuthCredentials | null {
   try {
-    const credPath = join(homedir(), '.claude/.credentials.json');
+    const credPath = join(getClaudeConfigDir(), '.credentials.json');
     if (!existsSync(credPath)) return null;
 
     const content = readFileSync(credPath, 'utf-8');
@@ -403,7 +403,7 @@ function fetchUsageFromZai(): Promise<ZaiQuotaResponse | null> {
  */
 function writeBackCredentials(creds: OAuthCredentials): void {
   try {
-    const credPath = join(homedir(), '.claude/.credentials.json');
+    const credPath = join(getClaudeConfigDir(), '.credentials.json');
     if (!existsSync(credPath)) return;
 
     const content = readFileSync(credPath, 'utf-8');

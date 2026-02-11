@@ -20,14 +20,15 @@ const askGeminiTool = {
                 type: 'string',
                 description: `Required. Agent perspective for Gemini. Recommended: ${GEMINI_RECOMMENDED_ROLES.join(', ')}. Any valid OMC agent role is accepted.`
             },
-            prompt_file: { type: 'string', description: 'Path to file containing the prompt' },
-            output_file: { type: 'string', description: 'Required. Path to write response. Response content is NOT returned inline - read from this file.' },
+            prompt: { type: 'string', description: 'Inline prompt text. Alternative to prompt_file -- the tool auto-persists to a file for audit trail. Use for simpler invocations where file management is unnecessary. If both prompt and prompt_file are provided, prompt_file takes precedence.' },
+            prompt_file: { type: 'string', description: 'Path to file containing the prompt. A defined (non-undefined) prompt_file value selects file mode; prompt_file must be a non-empty string when used. Passing null or non-string values triggers file-mode validation (not inline fallback).' },
+            output_file: { type: 'string', description: 'Required for file-based mode (prompt_file). Auto-generated in inline mode (prompt). Response content is returned inline only when using prompt parameter.' },
             files: { type: 'array', items: { type: 'string' }, description: 'File paths to include as context (contents will be prepended to prompt)' },
             model: { type: 'string', description: `Gemini model to use (default: ${GEMINI_DEFAULT_MODEL}). Set OMC_GEMINI_DEFAULT_MODEL env var to change default. Auto-fallback chain: ${GEMINI_MODEL_FALLBACKS.join(' → ')}.` },
-            background: { type: 'boolean', description: 'Run in background (non-blocking). Returns immediately with job metadata and file paths. Check response file for completion.' },
+            background: { type: 'boolean', description: 'Run in background (non-blocking). Returns immediately with job metadata and file paths. Check response file for completion. Not available with inline prompt.' },
             working_directory: { type: 'string', description: 'Working directory for path resolution and CLI execution. Defaults to process.cwd().' },
         },
-        required: ['agent_role', 'prompt_file', 'output_file'],
+        required: ['agent_role'],
     },
 };
 const jobTools = getJobManagementToolSchemas('gemini');
@@ -38,8 +39,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     if (name === 'ask_gemini') {
-        const { prompt_file, output_file, agent_role, model, files, background, working_directory } = (args ?? {});
-        return handleAskGemini({ prompt_file, output_file, agent_role, model, files, background, working_directory });
+        const { prompt, prompt_file, output_file, agent_role, model, files, background, working_directory } = (args ?? {});
+        return handleAskGemini({ prompt, prompt_file, output_file, agent_role, model, files, background, working_directory });
     }
     if (name === 'wait_for_job') {
         const { job_id, timeout_ms } = (args ?? {});

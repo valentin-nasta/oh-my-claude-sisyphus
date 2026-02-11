@@ -58,29 +58,21 @@ function renameOverwritingSync(fromPath: string, toPath: string): void {
  * Convert text to a filesystem-safe slug for filename
  *
  * @param text - The text to slugify (typically the user prompt)
- * @param maxWords - Maximum number of words to include (default 4)
- * @returns A filesystem-safe slug
+ * @returns A filesystem-safe slug (max 50 chars, [a-z0-9-] only, no path separators)
  */
-export function slugify(text: string, maxWords = 4): string {
+export function slugify(text: string): string {
   if (!text || typeof text !== 'string') {
     return 'prompt';
   }
 
-  // Take first maxWords words
-  const words = text.trim().split(/\s+/).slice(0, maxWords);
-
-  // Join, lowercase, replace non-alphanumeric with hyphens
-  let slug = words
-    .join('-')
+  const slug = text
     .toLowerCase()
+    .replace(/\.\./g, '')
+    .replace(/[/\\]/g, '')
     .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')  // Collapse multiple hyphens
-    .replace(/^-|-$/g, ''); // Trim leading/trailing hyphens
-
-  // Truncate to 40 chars max
-  if (slug.length > 40) {
-    slug = slug.substring(0, 40).replace(/-$/, '');
-  }
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50);
 
   return slug || 'prompt';
 }
@@ -239,7 +231,7 @@ export function persistPrompt(options: PersistPromptOptions): PersistPromptResul
     const frontmatter = buildPromptFrontmatter(options);
     const content = `${frontmatter}\n\n${options.fullPrompt}`;
 
-    writeFileSync(filePath, content, 'utf-8');
+    writeFileSync(filePath, content, { encoding: 'utf-8', mode: 0o600 });
 
     return { filePath, id, slug };
   } catch (err) {
@@ -281,7 +273,7 @@ export function persistResponse(options: PersistResponseOptions): string | undef
     const frontmatter = buildResponseFrontmatter(options);
     const content = `${frontmatter}\n\n${options.response}`;
 
-    writeFileSync(filePath, content, 'utf-8');
+    writeFileSync(filePath, content, { encoding: 'utf-8', mode: 0o600 });
 
     return filePath;
   } catch (err) {
@@ -321,7 +313,7 @@ export function writeJobStatus(status: JobStatus, workingDirectory?: string): vo
     const statusPath = getStatusFilePath(status.provider, status.slug, status.jobId, workingDirectory);
     const tempPath = statusPath + '.tmp';
 
-    writeFileSync(tempPath, JSON.stringify(status, null, 2), 'utf-8');
+    writeFileSync(tempPath, JSON.stringify(status, null, 2), { encoding: 'utf-8', mode: 0o600 });
     renameOverwritingSync(tempPath, statusPath);
 
     // SQLite write-through: also persist to jobs.db if available

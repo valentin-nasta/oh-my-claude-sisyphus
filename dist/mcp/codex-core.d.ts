@@ -84,8 +84,9 @@ export declare function validateAndReadFile(filePath: string, baseDir?: string):
  * the SDK server and the standalone stdio server.
  */
 export declare function handleAskCodex(args: {
-    prompt_file: string;
-    output_file: string;
+    prompt?: string;
+    prompt_file?: string;
+    output_file?: string;
     agent_role: string;
     model?: string;
     context_files?: string[];

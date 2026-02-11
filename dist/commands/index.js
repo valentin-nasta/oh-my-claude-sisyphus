@@ -6,12 +6,12 @@
  */
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getClaudeConfigDir } from '../utils/paths.js';
 /**
  * Get the commands directory path
  */
 export function getCommandsDir() {
-    return join(homedir(), '.claude', 'commands');
+    return join(getClaudeConfigDir(), 'commands');
 }
 /**
  * Parse command frontmatter and content
