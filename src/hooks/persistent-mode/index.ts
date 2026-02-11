@@ -288,6 +288,16 @@ async function checkRalphLoop(
         mode: 'none'
       };
     }
+    if (teamPhase === 'cancelled') {
+      clearRalphState(workingDir, sessionId);
+      clearVerificationState(workingDir, sessionId);
+      deactivateUltrawork(workingDir, sessionId);
+      return {
+        shouldBlock: false,
+        message: `[RALPH LOOP CANCELLED - TEAM] Team pipeline was cancelled. Ralph loop ending after ${state.iteration} iteration(s).`,
+        mode: 'none'
+      };
+    }
   }
 
   // Check for PRD-based completion (all stories have passes: true)
