@@ -521,8 +521,10 @@ export async function handleAskGemini(args: {
   // it to a file for audit trail and continue with normal prompt_file flow.
   // `prompt_file` takes precedence if both are provided.
   // Separate intent detection (field presence) from content validation (non-empty).
+  // Type-guard both fields for defensive robustness against non-string values.
   const inlinePrompt = typeof args.prompt === 'string' ? args.prompt : undefined;
-  const hasInlineIntent = inlinePrompt !== undefined && !args.prompt_file?.trim();
+  const promptFileInput = typeof args.prompt_file === 'string' ? args.prompt_file : undefined;
+  const hasInlineIntent = inlinePrompt !== undefined && !promptFileInput?.trim();
   const isInlineMode = hasInlineIntent && !!inlinePrompt.trim();
 
   // Reject empty/whitespace inline prompt with explicit error BEFORE any side effects
