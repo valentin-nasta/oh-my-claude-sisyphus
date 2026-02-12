@@ -79,25 +79,46 @@ export function isHudEnabledInConfig() {
     }
 }
 /**
+ * Known OMC hook script filenames installed into .claude/hooks/.
+ * Must be kept in sync with getHookScripts() in hooks.ts and
+ * HOOKS_SETTINGS_CONFIG_NODE command entries.
+ */
+const OMC_HOOK_FILENAMES = new Set([
+    'keyword-detector.mjs',
+    'session-start.mjs',
+    'pre-tool-use.mjs',
+    'post-tool-use.mjs',
+    'post-tool-use-failure.mjs',
+    'persistent-mode.mjs',
+    'stop-continuation.mjs',
+]);
+/**
  * Detect whether a hook command belongs to oh-my-claudecode.
  *
- * Uses substring matching rather than word-boundary regex.
- * Rationale: Real OMC hooks use compound names where "omc" is embedded
- * (e.g., `omc-pre-tool-use.mjs`, `oh-my-claudecode-hook.mjs`). A word-boundary
- * regex like /\bomc\b/ would fail to match "oh-my-claudecode" since "omc" appears
- * as an interior substring. The theoretical false positives (words containing "omc"
- * like "atomic", "socom") are extremely unlikely in real hook command paths.
+ * Recognition strategy (any match is sufficient):
+ * 1. Command path contains "omc" as a path/word segment (e.g. `omc-hook.mjs`, `/omc/`)
+ * 2. Command path contains "oh-my-claudecode"
+ * 3. Command references a known OMC hook filename inside .claude/hooks/
  *
  * @param command - The hook command string
- * @returns true if the command contains 'omc' or 'oh-my-claudecode'
+ * @returns true if the command belongs to OMC
  */
 export function isOmcHook(command) {
     const lowerCommand = command.toLowerCase();
-    // Match on path segments or word boundaries, not substrings
+    // Match "omc" as a path segment or word boundary
     // Matches: /omc/, /omc-, omc/, -omc, _omc, omc_
     const omcPattern = /(?:^|[\/\\_-])omc(?:$|[\/\\_-])/;
     const fullNamePattern = /oh-my-claudecode/;
-    return omcPattern.test(lowerCommand) || fullNamePattern.test(lowerCommand);
+    if (omcPattern.test(lowerCommand) || fullNamePattern.test(lowerCommand)) {
+        return true;
+    }
+    // Check for known OMC hook filenames in .claude/hooks/ path.
+    // Handles both Unix (.claude/hooks/) and Windows (.claude\hooks\) paths.
+    const hookPathMatch = lowerCommand.match(/\.claude[/\\]hooks[/\\]([a-z0-9-]+\.mjs)/);
+    if (hookPathMatch && OMC_HOOK_FILENAMES.has(hookPathMatch[1])) {
+        return true;
+    }
+    return false;
 }
 /**
  * Check if the current Node.js version meets the minimum requirement

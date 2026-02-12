@@ -6,6 +6,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getClaudeConfigDir } from '../../utils/paths.js';
+import { isOmcHook } from '../../installer/index.js';
 import type { PluginConfig } from '../../shared/types.js';
 import { colors } from '../utils/formatting.js';
 
@@ -49,9 +50,7 @@ export function checkHookConflicts(): ConflictReport['hookConflicts'] {
           if (!group.hooks || !Array.isArray(group.hooks)) continue;
           for (const hook of group.hooks) {
             if (hook.type === 'command' && hook.command) {
-              const lowerCmd = hook.command.toLowerCase();
-              const isOmc = lowerCmd.includes('omc') || lowerCmd.includes('oh-my-claudecode');
-              conflicts.push({ event, command: hook.command, isOmc });
+              conflicts.push({ event, command: hook.command, isOmc: isOmcHook(hook.command) });
             }
           }
         }
