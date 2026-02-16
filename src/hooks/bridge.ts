@@ -505,9 +505,14 @@ async function processPersistentMode(input: HookInput): Promise<HookOutput> {
           notify("session-idle", {
             sessionId,
             projectPath: directory,
+            profileName: process.env.OMC_NOTIFY_PROFILE,
           }).catch(() => {})
         ).catch(() => {});
       }
+
+      // IMPORTANT: Do NOT clean up reply-listener/session-registry on Stop hooks.
+      // Stop can fire for normal "idle" turns while the session is still active.
+      // Reply cleanup is handled in the true SessionEnd hook only.
     }
     return output;
   }
@@ -560,8 +565,30 @@ async function processSessionStart(input: HookInput): Promise<HookOutput> {
       notify("session-start", {
         sessionId,
         projectPath: directory,
+        profileName: process.env.OMC_NOTIFY_PROFILE,
       }).catch(() => {})
     ).catch(() => {});
+  }
+
+  // Start reply listener daemon if configured (non-blocking, swallows errors)
+  if (sessionId) {
+    Promise.all([
+      import("../notifications/reply-listener.js"),
+      import("../notifications/config.js"),
+    ]).then(
+      ([
+        { startReplyListener },
+        { getReplyConfig, getNotificationConfig, getReplyListenerPlatformConfig },
+      ]) => {
+      const replyConfig = getReplyConfig();
+      if (!replyConfig) return;
+      const notifConfig = getNotificationConfig();
+      const platformConfig = getReplyListenerPlatformConfig(notifConfig);
+      startReplyListener({
+        ...replyConfig,
+        ...platformConfig,
+      });
+    }).catch(() => {});
   }
 
   const messages: string[] = [];
@@ -720,6 +747,7 @@ export function dispatchAskUserQuestionNotification(
       sessionId,
       projectPath: directory,
       question: questionText,
+      profileName: process.env.OMC_NOTIFY_PROFILE,
     }).catch(() => {})
   ).catch(() => {});
 }
